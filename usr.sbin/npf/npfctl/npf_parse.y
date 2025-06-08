@@ -141,6 +141,7 @@ yyerror(const char *fmt, ...)
 %token			NAME
 %token			NETMAP
 %token			NPT66
+%token			NAT64
 %token			ON
 %token			OFF
 %token			OUT
@@ -399,6 +400,7 @@ map_algo
 	| ALGO IPHASH		{ $$ = NPF_ALGO_IPHASH; }
 	| ALGO ROUNDROBIN	{ $$ = NPF_ALGO_RR; }
 	| ALGO NPT66		{ $$ = NPF_ALGO_NPT66; }
+	| ALGO NAT64		{ $$ = NPF_ALGO_NAT64; }
 	|			{ $$ = 0; }
 	;
 
