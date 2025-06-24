@@ -904,6 +904,44 @@ npf_npt66_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
 	return 0;
 }
 
+/*
+ * IPv6-to-IPv4 Network Prefix Translation (NAT64), as per RFC 6052.
+ * Stateless Translation (SIIT)
+ */
+
+int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
+    npf_netmask_t len, npf_addr_t *result_ipv4addr)
+{
+
+    npf_addr_t *ipv6addr = npc->npc_ips[which];
+    const uint8_t *ipv6 = ipv6addr->word8;
+    uint8_t *ipv4 = result_ipv4addr->word8;
+    unsigned offset;
+
+	KASSERT(which == NPF_SRC || which == NPF_DST);
+
+	if (!npf_iscached(npc, NPC_IP6)) {
+        return EINVAL;
+    }
+
+    // Offset is based on prefix length (RFC 6052)
+    switch (len)
+	{
+    	case 32: offset = 4; break;
+    	case 40: offset = 5; break;
+    	case 48: offset = 6; break;
+    	case 56: offset = 7; break;
+    	case 64: offset = 8; break;
+    	case 96: offset = 12; break;
+    	default:
+        return EINVAL;
+    }
+
+    // The last 4 bytes (embedded IPv4 address) from IPv6 is copied into result buffer
+    memcpy(ipv4, &ipv6[offset], 4);
+    return 0;
+}
+
 #if defined(DDB) || defined(_NPF_TESTING)
 
 const char *
