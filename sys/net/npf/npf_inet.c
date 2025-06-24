@@ -836,8 +836,14 @@ npf_napt_rwr(const npf_cache_t *npc, u_int which,
  * IPv6-to-IPv6 Network Prefix Translation (NPTv6), as per RFC 6296.
  */
 int
-npf_npt66_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
-    npf_netmask_t len, uint16_t adj)
+npf_npt66_rwr(
+	const npf_cache_t *npc,
+	u_int which,
+	const npf_addr_t *pref,
+    npf_netmask_t len,
+	uint16_t adj)
+
+
 {
 	npf_addr_t *addr = npc->npc_ips[which];
 	unsigned remnant, word, preflen = len >> 4;
@@ -903,6 +909,51 @@ npf_npt66_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
 	addr->word16[word] = sum;
 	return 0;
 }
+
+/*
+ * IPv6-to-IPv4 Network Prefix Translation (NAT64), as per RFC 6052.
+ * Stateless Translation (SIIT)
+ */
+
+int npf_nat64_rwr(
+    const npf_cache_t *npc,          // Parsed packet metadata (headers, addresses)
+    u_int which,                     // Either NPF_SRC or NPF_DST — tells us which IP to translate
+    //const npf_addr_t *ipv6addr,        // The full IPv6 address to be translated
+    const npf_addr_t *pref,        // The NAT64 prefix (e.g., 64:ff9b::/96)
+    npf_netmask_t len,               // Prefix length (e.g., 96)
+    npf_addr_t *result_ipv4addr        // Output buffer for translated IPv4 address
+){
+	npf_addr_t *ipv6addr = npc->npc_ips[which];
+	// Extract the address from cache (like in nat66)
+    npf_addr_t *ipv6addr = npc->npc_ips[which];
+    const uint8_t *ipv6 = ipv6addr->word8;
+    uint8_t *ipv4 = result_ipv4addr->word8;
+    unsigned offset;
+
+	KASSERT(which == NPF_SRC || which == NPF_DST);
+
+	 if (!npf_iscached(npc, NPC_IP6)) {
+        return EINVAL;
+    }
+
+    // Determine the offset based on prefix length (RFC 6052)
+    switch (len) {
+    case 32: offset = 4; break;
+    case 40: offset = 5; break;
+    case 48: offset = 6; break;
+    case 56: offset = 7; break;
+    case 64: offset = 8; break;
+    case 96: offset = 12; break;
+    default:
+        return EINVAL;
+    }
+
+    //The last 4 bytes (embedded IPv4 address) from IPv6 is copied into result buffer
+    memcpy(ipv4, &ipv6[offset], 4);
+
+    return 0;
+}
+
 
 #if defined(DDB) || defined(_NPF_TESTING)
 
