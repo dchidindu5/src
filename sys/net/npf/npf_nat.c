@@ -642,9 +642,9 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 		break;
 
 		/*npf_addr_t v4addr;
-		int ret = npf_siit64_rwr(npc, which, &np->n_taddr, np->n_tmask, &v4addr);
-		if (ret != 0){
-    		return ret;  // Exit early if something went wrong
+		int just_return = npf_siit64_rwr(npc, which, &np->n_taddr, np->n_tmask, &v4addr);
+		if (just_return != 0){
+    		return just_return;  // Exit early if something went wrong
 		}
 		taddr = &v4addr;
 		*/

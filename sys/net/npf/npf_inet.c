@@ -948,7 +948,8 @@ int npf_siit64_rwr(
         return EINVAL;
     }
 
-    //The last 4 bytes (embedded IPv4 address) from IPv6 is copied into result buffer
+    //The last 4 bytes (embedded IPv4 address) from IPv6 is
+	// copied into result buffer
     memcpy(ipv4, &ipv6[offset], 4);
 
     return 0;
