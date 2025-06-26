@@ -915,7 +915,7 @@ npf_npt66_rwr(
  * Stateless Translation (SIIT)
  */
 
-int npf_nat64_rwr(
+int npf_siit64_rwr(
     const npf_cache_t *npc,          // Parsed packet metadata (headers, addresses)
     u_int which,                     // Either NPF_SRC or NPF_DST — tells us which IP to translate
     //const npf_addr_t *ipv6addr,        // The full IPv6 address to be translated
