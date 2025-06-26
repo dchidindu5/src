@@ -623,6 +623,7 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	const unsigned which = npf_nat_which(np->n_type, flow);
 	const npf_addr_t *taddr;
 	npf_addr_t addr;
+	npf_addr_t ipv4addr;
 
 	KASSERT(np->n_flags & NPF_NAT_STATIC);
 
@@ -634,6 +635,12 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	case NPF_ALGO_NPT66:
 		return npf_npt66_rwr(npc, which, &np->n_taddr,
 		    np->n_tmask, np->n_npt66_adj);
+
+	case NPF_ALGO_SIIT64:
+		npf_siit64_rwr(npc, which, &np->n_taddr,
+			np->n_tmask, &ipv4addr);
+		taddr = &ipv4addr;
+		break;
 	default:
 		taddr = &np->n_taddr;
 		break;
