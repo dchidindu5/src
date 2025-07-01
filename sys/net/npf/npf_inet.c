@@ -936,9 +936,10 @@ int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
     	default:
         return EINVAL;
     }
-
-    // The last 4 bytes (embedded IPv4 address) from IPv6 is copied into result buffer
-    memcpy(ipv4, &ipv6[offset], 4);
+	//Copy the last 4 byte of embedded IPv4 from the IPv6 address.
+	memcpy(result_ipv4addr, ((const uint8_t *)ipv6addr) + offset, 4);
+	// The rest could contain garbage if not zeroed
+    memset(((uint8_t *)result_ipv4addr) + 4, 0, sizeof(npf_addr_t) - 4);
     return 0;
 }
 
