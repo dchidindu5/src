@@ -53,6 +53,20 @@ typedef struct npf npf_t;
 /*
  * Storage of address (both for IPv4 and IPv6) and netmask.
  */
+
+
+/* Each array simply holds multiple values of a fixed type:
+Only one of those members is used at a time,
+and the size of the union is the size of its largest member — here, all of them are 16 bytes.
+word8[16]:
+16 elements of uint8_t
+16 × 1 byte = 16 bytes
+
+word16[8]:
+8 elements of uint16_t
+8 × 2 bytes = 16 bytes
+*/
+
 typedef union {
 	uint8_t			word8[16];
 	uint16_t		word16[8];

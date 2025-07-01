@@ -915,6 +915,9 @@ npf_npt66_rwr(
  * Stateless Translation (SIIT)
  */
 
+ /*
+GOAL 1: EXTRACT THE EMBEDDED IPV4 FROM THE IPV6
+ */
 int npf_siit64_rwr(
     const npf_cache_t *npc,          // Parsed packet metadata (headers, addresses)
     u_int which,                     // Either NPF_SRC or NPF_DST — tells us which IP to translate
@@ -923,11 +926,12 @@ int npf_siit64_rwr(
     npf_netmask_t len,               // Prefix length (e.g., 96)
     npf_addr_t *result_ipv4addr        // Output buffer for translated IPv4 address
 ){
-	npf_addr_t *ipv6addr = npc->npc_ips[which];
+
 	// Extract the address from cache (like in nat66)
     npf_addr_t *ipv6addr = npc->npc_ips[which];
-    const uint8_t *ipv6 = ipv6addr->word8;
-    uint8_t *ipv4 = result_ipv4addr->word8;
+	//Do not use word/byte pointer it causes alignment issues in the stack.
+    //const uint8_t *ipv6 = ipv6addr->word8;
+    //uint8_t *ipv4 = result_ipv4addr->word8;
     unsigned offset;
 
 	KASSERT(which == NPF_SRC || which == NPF_DST);
@@ -950,7 +954,10 @@ int npf_siit64_rwr(
 
     //The last 4 bytes (embedded IPv4 address) from IPv6 is
 	// copied into result buffer
-    memcpy(ipv4, &ipv6[offset], 4);
+	memcpy(result_ipv4addr, ((const uint8_t *)ipv6addr) + offset, 4);
+	// The rest could contain garbage if not zeroed
+    memset(((uint8_t *)result_ipv4addr) + 4, 0, sizeof(npf_addr_t) - 4);
+    //memcpy(ipv4, &ipv6[offset], 4);
 
     return 0;
 }

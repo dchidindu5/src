@@ -635,7 +635,8 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	case NPF_ALGO_NPT66:
 		return npf_npt66_rwr(npc, which, &np->n_taddr,
 		    np->n_tmask, np->n_npt66_adj);
-	case NPF_ALGO_SIIT64:
+	//case NPF_ALGO_SIIT64:
+	case NPF_ALGO_NAT64:
 		npf_siit64_rwr(npc, which, &np->n_taddr,
 			np->n_tmask, &ipv4addr);
 		taddr = &ipv4addr;
