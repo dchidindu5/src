@@ -914,8 +914,8 @@ int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
 {
 
     npf_addr_t *ipv6addr = npc->npc_ips[which];
-    const uint8_t *ipv6 = ipv6addr->word8;
-    uint8_t *ipv4 = result_ipv4addr->word8;
+    //const uint8_t *ipv6 = ipv6addr->word8;
+    //uint8_t *ipv4 = result_ipv4addr->word8;
     unsigned offset;
 
 	KASSERT(which == NPF_SRC || which == NPF_DST);
