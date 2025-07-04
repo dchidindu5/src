@@ -928,7 +928,11 @@ int npf_siit64_rwr(
 ){
 
 	// Extract the address from cache (like in nat66)
-    npf_addr_t *ipv6addr = npc->npc_ips[which];
+    //npf_addr_t *ipv6addr = npc->npc_ips[which];
+	npf_addr_t *ipv6_dest = npc->npc_ips[NPF_DST];
+	//destination ipv4 address
+	npf_addr_t new_ipv4;
+
 	//Do not use word/byte pointer it causes alignment issues in the stack.
     //const uint8_t *ipv6 = ipv6addr->word8;
     //uint8_t *ipv4 = result_ipv4addr->word8;
@@ -952,11 +956,21 @@ int npf_siit64_rwr(
         return EINVAL;
     }
 
+	// Clear the output address
+    memset(&new_ipv4, 0, sizeof(npf_addr_t));
+
+    // Copy IPv4 bytes from inside IPv6 address (based on offset)
+    memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, 4);
+
+    // Store in result in the output params
+    *result_ipv4addr = new_ipv4;
+
+
     //The last 4 bytes (embedded IPv4 address) from IPv6 is
 	// copied into result buffer
-	memcpy(result_ipv4addr, ((const uint8_t *)ipv6addr) + offset, 4);
+	//memcpy(result_ipv4addr, ((const uint8_t *)ipv6addr) + offset, 4);
 	// The rest could contain garbage if not zeroed
-    memset(((uint8_t *)result_ipv4addr) + 4, 0, sizeof(npf_addr_t) - 4);
+    //memset(((uint8_t *)result_ipv4addr) + 4, 0, sizeof(npf_addr_t) - 4);
     //memcpy(ipv4, &ipv6[offset], 4);
 
     return 0;
