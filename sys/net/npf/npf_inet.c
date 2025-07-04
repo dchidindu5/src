@@ -913,9 +913,8 @@ int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
     npf_netmask_t len, npf_addr_t *result_ipv4addr)
 {
 
-    npf_addr_t *ipv6addr = npc->npc_ips[which];
-    //const uint8_t *ipv6 = ipv6addr->word8;
-    //uint8_t *ipv4 = result_ipv4addr->word8;
+    npf_addr_t *ipv6_dest = npc->npc_ips[NPF_DST];
+	npf_addr_t new_ipv4;
     unsigned offset;
 
 	KASSERT(which == NPF_SRC || which == NPF_DST);
@@ -936,10 +935,12 @@ int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
     	default:
         return EINVAL;
     }
-	//Copy the last 4 byte of embedded IPv4 from the IPv6 address.
-	memcpy(result_ipv4addr, ((const uint8_t *)ipv6addr) + offset, 4);
-	// The rest could contain garbage if not zeroed
-    memset(((uint8_t *)result_ipv4addr) + 4, 0, sizeof(npf_addr_t) - 4);
+
+	// Copy IPv4 bytes from inside IPv6 address (based on offset)
+    memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, 4);
+
+    // Store result in the output params
+    *result_ipv4addr = new_ipv4;
     return 0;
 }
 
