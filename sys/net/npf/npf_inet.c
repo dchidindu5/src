@@ -918,6 +918,7 @@ npf_npt66_rwr(
  /*
 GOAL 1: EXTRACT THE EMBEDDED IPV4 FROM THE IPV6
  */
+//COMPLETE LOGIC
 int
 npf_siit64_rwr(const npf_cache_t *npc, u_int which,
     const npf_addr_t *pref, npf_netmask_t len,
@@ -968,6 +969,7 @@ npf_siit64_rwr(const npf_cache_t *npc, u_int which,
         memmove(&temp[8], &temp[9], 7);  // Now 15-byte adjusted address
 
         // Step 3: extract 4 bytes from new offset
+		adjusted = temp;
         memcpy(&new_ipv4, adjusted + offset, 4);
         break;
 
@@ -981,6 +983,7 @@ npf_siit64_rwr(const npf_cache_t *npc, u_int which,
 
 
 // Handles only /96 logic
+// incomplete logic
 int npf_siit64_rwr(
     const npf_cache_t *npc,          // Parsed packet metadata (headers, addresses)
     u_int which,                     // Either NPF_SRC or NPF_DST — tells us which IP to translate
