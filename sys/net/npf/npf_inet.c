@@ -979,7 +979,6 @@ int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
         memmove(&temp[8], &temp[9], 7);  // Now 15-byte adjusted address
 
         // Extract 4 bytes from new offset
-		adjusted = temp;
         memcpy(&new_ipv4, adjusted + offset, 4);
         break;
 
