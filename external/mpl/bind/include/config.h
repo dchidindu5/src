@@ -195,6 +195,7 @@
 /* Define to 1 if you have the <glob.h> header file. */
 #define HAVE_GLOB_H 1
 
+#ifdef WITH_KERBEROS
 /* Define to 1 if you have the Kerberos Framework available */
 #define HAVE_GSSAPI 1
 
@@ -212,6 +213,7 @@
 
 /* Define to 1 if you have the `gss_acquire_cred' function. */
 #define HAVE_GSS_ACQUIRE_CRED 1
+#endif
 
 /* Define to 1 if you have the <idn2.h> header file. */
 /* #undef HAVE_IDN2_H */
@@ -231,6 +233,7 @@
 /* Use json-c library */
 /* #undef HAVE_JSON_C */
 
+#ifdef WITH_KERBEROS
 /* Define to 1 if you have the <krb5.h> header file. */
 /* #undef HAVE_KRB5_H */
 
@@ -239,6 +242,7 @@
 
 /* Define to 1 if you have the <krb5/krb5.h> header file. */
 #define HAVE_KRB5_KRB5_H 1
+#endif
 
 /* Define to 1 if libcap was found */
 /* #undef HAVE_LIBCAP */
@@ -524,10 +528,10 @@
 #define PACKAGE_NAME "BIND"
 
 /* A short hash from git */
-#define PACKAGE_SRCID "283ac23"
+#define PACKAGE_SRCID "c6b2e31"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "BIND 9.20.4"
+#define PACKAGE_STRING "BIND 9.20.11"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "bind"
@@ -536,7 +540,7 @@
 #define PACKAGE_URL "https://www.isc.org/downloads/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "9.20.4"
+#define PACKAGE_VERSION "9.20.11"
 
 /* BIND 9 Extra part of the version */
 #define PACKAGE_VERSION_EXTRA ""
@@ -548,7 +552,7 @@
 #define PACKAGE_VERSION_MINOR "20"
 
 /* BIND 9 Patch part of the version */
-#define PACKAGE_VERSION_PATCH "4"
+#define PACKAGE_VERSION_PATCH "11"
 
 /* Define to necessary symbol if this constant uses a non-standard name on
    your system. */
@@ -678,7 +682,7 @@
 #define VALIDATION_DEFAULT "auto"
 
 /* Version number of package */
-#define VERSION "9.20.4"
+#define VERSION "9.20.11"
 
 /* Define to enable very verbose query trace logging. */
 #define WANT_QUERYTRACE 1

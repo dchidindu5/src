@@ -1,4 +1,4 @@
-$NetBSD: UPDATING,v 1.379 2025/04/27 23:30:39 kre Exp $
+$NetBSD: UPDATING,v 1.383 2025/07/21 17:07:26 martin Exp $
 
 This file (UPDATING) is intended to be a brief reference to recent
 changes that might cause problems in the build process, and a guide for
@@ -18,6 +18,19 @@ See also: BUILDING, build.sh, Makefile.
 
 Recent changes:
 ^^^^^^^^^^^^^^^
+
+20250721:
+	GCC 12.5 was imported and there may be weird build issues.
+	Clean any GCC build dirs if you encounter weird things.
+
+20250720:
+	New openssl and old objects for tests for libcrypto may
+	cause spurious test failure, clean the src/tests/crypto/libcrypto
+	object dirs.
+
+20250528:
+	Changes in the tools build require removing all config.cache
+	files in the object tools directories.
 
 20250427:
 	The KERNEL_DIR option to build.sh is now functional.  Set it
@@ -93,6 +106,11 @@ Recent changes:
 	On architectures with COMPAT libs, those also have to be cleaned,
 	e.g. on sparc64: "rm -rf $OBJ/compat/sparc64/sparc/external/bsd/jemalloc*"
 	and "rm $OBJ/compat/sparc64/sparc/lib/libc/jemalloc.*".
+
+20240920:
+	Update builds will require cleaning in src/external/historical/nawk/bin
+	in order to remove the awk subdirectory since there is now a binary
+	called awk.
 
 20240817:
 	Update builds will require cleaning in src/external/historical/nawk/bin

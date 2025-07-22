@@ -1,4 +1,4 @@
-/*	$NetBSD: sti_machdep.c,v 1.2 2025/05/17 16:14:13 tsutsui Exp $	*/
+/*	$NetBSD: sti_machdep.c,v 1.7 2025/05/31 03:05:25 tsutsui Exp $	*/
 /*	$OpenBSD: sti_sgc.c,v 1.14 2007/05/26 00:36:03 krw Exp $	*/
 
 /*
@@ -51,7 +51,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sti_machdep.c,v 1.2 2025/05/17 16:14:13 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sti_machdep.c,v 1.7 2025/05/31 03:05:25 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -59,23 +59,33 @@ __KERNEL_RCSID(0, "$NetBSD: sti_machdep.c,v 1.2 2025/05/17 16:14:13 tsutsui Exp 
 
 #include <dev/wscons/wsconsio.h>
 
-#include <hp300/dev/sgcvar.h>
 #include <hp300/dev/sti_machdep.h>
 
 /*
- * 425e EVRX specific hardware
+ * 425e and 362/382 EVRX specific hardware
  */
 /*
- * EVRX RAMDAC (Bt458) is found at offset 0x060000 from SGC bus PA and
- * offset 0x040000 length 0x1c0000 is mapped in MI sti via ROM region 2
+ * RAMDAC (Bt458) on 425e EVRX is found at offset 0x00060000 from SGC bus PA.
+ * RAMDAC (Bt474) on 362/382 EVRX is also found at offset 0x00060000
+ * from DIO scode (132) + STI_DIO_SCODE_OFFSET PA (i.e. 0x01800000).
+ *
+ * Offset 0x040000 length 0x1c0000 is mapped in MI sti via ROM region 2
+ * on both 425e and 362/382.
  */
-#define STI_EVRX_REGNO2OFFSET	0x020000
-#define STI_EVRX_FBOFFSET	0x200000
+#define STI_EVRX_REGNO2OFFSET	0x00020000	/* 0x00060000 - 0x00040000 */
+
+/* bitmap memory can be accessed at offset +0x200000 */
+#define STI_EVRX_FBOFFSET	0x00200000
 
 #define EVRX_BT458_ADDR		(STI_EVRX_REGNO2OFFSET + 0x200 + 2)
 #define EVRX_BT458_CMAP		(STI_EVRX_REGNO2OFFSET + 0x204 + 2)
 #define EVRX_BT458_CTRL		(STI_EVRX_REGNO2OFFSET + 0x208 + 2)
 #define EVRX_BT458_OMAP		(STI_EVRX_REGNO2OFFSET + 0x20C + 2)
+
+/* These registers are partially common between Bt474 and Bt458 */
+#define EVRX_BT4xx_ADDR		EVRX_BT458_ADDR
+#define EVRX_BT4xx_CMAP		EVRX_BT458_CMAP
+#define EVRX_BT4xx_CTRL		EVRX_BT458_CTRL
 
 /* from HP-UX /usr/lib/libddevrx.a */
 #define EVRX_MAGIC00		(STI_EVRX_REGNO2OFFSET + 0x600)
@@ -90,9 +100,10 @@ __KERNEL_RCSID(0, "$NetBSD: sti_machdep.c,v 1.2 2025/05/17 16:14:13 tsutsui Exp 
 /*
  * HP A1659A CRX specific hardware
  */
+/* bitmap memory can be accessed at offset +0x1000000 */
 #define STI_CRX_FBOFFSET	0x01000000
 
-/* 425e EVRX/CRX specific access functions */
+/* hp300 EVRX and CRX specific access functions */
 static int sti_evrx_putcmap(struct sti_screen *, u_int, u_int);
 static void sti_evrx_resetramdac(struct sti_screen *);
 static void sti_evrx_resetcmap(struct sti_screen *);
@@ -105,12 +116,12 @@ static struct sti_screen sticn_scr;
 static bus_addr_t sticn_bases[STI_REGION_MAX];
 
 static const struct wsdisplay_accessops sti_m68k_accessops = {
-	sti_ioctl,
-	sti_m68k_mmap,
-	sti_alloc_screen,
-	sti_free_screen,
-	sti_show_screen,
-	sti_load_font
+	.ioctl        = sti_ioctl,
+	.mmap         = sti_m68k_mmap,
+	.alloc_screen = sti_alloc_screen,
+	.free_screen  = sti_free_screen,
+	.show_screen  = sti_show_screen,
+	.load_font    = sti_load_font
 };
 
 void
@@ -145,59 +156,48 @@ sti_machdep_attach(struct sti_machdep_softc *sc)
 
 	switch (grid0) {
 	case STI_DD_EVRX:
+	case STI_DD_382C:
+	case STI_DD_3X2V:
 		/*
-		 * 425e on-board EVRX framebuffer.
-		 * bitmap memory can be accessed at offset +0x200000.
+		 * 425e and 362/382 on-board EVRX framebuffer.
 		 */
 		sc->sc_bitmap = base + STI_EVRX_FBOFFSET;
 
-		aprint_normal_dev(ssc->sc_dev, "Enable mmap support\n");
-
 		/*
-		 * initialize Bt458 RAMDAC and preserve initial color map
+		 * initialize Bt458/474 RAMDAC and preserve initial color map
 		 */
 		sti_evrx_resetramdac(scr);
 		sti_evrx_resetcmap(scr);
-
 		scr->setupfb = sti_evrx_setupfb;
 		scr->putcmap = sti_evrx_putcmap;
-
-		scr->scr_wsmode = WSDISPLAYIO_MODE_EMUL;
-		waa.console = ssc->sc_flags & STI_CONSOLE ? 1 : 0;
-		waa.scrdata = &scr->scr_screenlist;
-		waa.accessops = &sti_m68k_accessops;
-		waa.accesscookie = scr;
-
-		config_found(ssc->sc_dev, &waa, wsemuldisplaydevprint,
-		    CFARGS_NONE);
 		break;
 
 	case STI_DD_CRX:
 		/*
 		 * HP A1659A CRX on some 425t variants.
-		 * bitmap memory can be accessed at offset +0x1000000.
 		 */
 		sc->sc_bitmap = base + STI_CRX_FBOFFSET;
-
-		aprint_normal_dev(ssc->sc_dev, "Enable mmap support\n");
-
-		scr->scr_wsmode = WSDISPLAYIO_MODE_EMUL;
-		waa.console = ssc->sc_flags & STI_CONSOLE ? 1 : 0;
-		waa.scrdata = &scr->scr_screenlist;
-		waa.accessops = &sti_m68k_accessops;
-		waa.accesscookie = scr;
-
-		config_found(ssc->sc_dev, &waa, wsemuldisplaydevprint,
-		    CFARGS_NONE);
 		break;
+
 	default:
 		/*
 		 * Unsupported variants.
 		 * Use default common sti(4) attachment (no bitmap support).
 		 */
 		sti_end_attach(ssc);
-		break;
+		return;
 	}
+
+	aprint_normal_dev(ssc->sc_dev, "Enable mmap support\n");
+
+	scr->scr_wsmode = WSDISPLAYIO_MODE_EMUL;
+	waa.console = ssc->sc_flags & STI_CONSOLE ? 1 : 0;
+	waa.scrdata = &scr->scr_screenlist;
+	waa.accessops = &sti_m68k_accessops;
+	waa.accesscookie = scr;
+
+	config_found(ssc->sc_dev, &waa, wsemuldisplaydevprint,
+	    CFARGS_NONE);
 }
 
 static int
@@ -216,10 +216,10 @@ sti_evrx_putcmap(struct sti_screen *scr, u_int index, u_int count)
 		while ((bus_space_read_4(bst, bsh, EVRX_MAGIC10) &
 		    EVRX_MAGIC10_BSY) != 0)
 			continue;
-		bus_space_write_1(bst, bsh, EVRX_BT458_ADDR, i);
-		bus_space_write_1(bst, bsh, EVRX_BT458_CMAP, scr->scr_rcmap[i]);
-		bus_space_write_1(bst, bsh, EVRX_BT458_CMAP, scr->scr_gcmap[i]);
-		bus_space_write_4(bst, bsh, EVRX_MAGIC10,   scr->scr_bcmap[i]);
+		bus_space_write_1(bst, bsh, EVRX_BT4xx_ADDR, i);
+		bus_space_write_1(bst, bsh, EVRX_BT4xx_CMAP, scr->scr_rcmap[i]);
+		bus_space_write_1(bst, bsh, EVRX_BT4xx_CMAP, scr->scr_gcmap[i]);
+		bus_space_write_4(bst, bsh, EVRX_MAGIC10,    scr->scr_bcmap[i]);
 	}
 	return 0;
 }
@@ -241,9 +241,14 @@ sti_evrx_resetramdac(struct sti_screen *scr)
 	 */
 
 	/* all planes will be read */
-	bus_space_write_1(bst, bsh, EVRX_BT458_ADDR, 0x04);
-	bus_space_write_1(bst, bsh, EVRX_BT458_CTRL, 0xff);
+	bus_space_write_1(bst, bsh, EVRX_BT4xx_ADDR, 0x04);
+	bus_space_write_1(bst, bsh, EVRX_BT4xx_CTRL, 0xff);
 
+#if 0
+	/*
+	 * HP-UX woodInitializeHardware() doesn't touch these
+	 * Bt458 specific registers. Maybe initialized by STI ROM?
+	 */
 	/* all planes have non-blink */
 	bus_space_write_1(bst, bsh, EVRX_BT458_ADDR, 0x05);
 	bus_space_write_1(bst, bsh, EVRX_BT458_CTRL, 0x00);
@@ -255,6 +260,7 @@ sti_evrx_resetramdac(struct sti_screen *scr)
 	/* no test mode */
 	bus_space_write_1(bst, bsh, EVRX_BT458_ADDR, 0x07);
 	bus_space_write_1(bst, bsh, EVRX_BT458_CTRL, 0x00);
+#endif
 
 	/* magic initialization from HP-UX woodInitializeHardware() */
 	bus_space_write_4(bst, bsh, EVRX_MAGIC00, 0x00000001);
@@ -293,9 +299,9 @@ sti_evrx_resetcmap(struct sti_screen *scr)
 		    EVRX_MAGIC10_BSY) != 0)
 			continue;
 		bus_space_write_1(bst, bsh, EVRX_BT458_ADDR, i);
-		scr->scr_rcmap[i] = bus_space_read_1(bst, bsh, EVRX_BT458_CMAP);
-		scr->scr_gcmap[i] = bus_space_read_1(bst, bsh, EVRX_BT458_CMAP);
-		scr->scr_bcmap[i] = bus_space_read_1(bst, bsh, EVRX_BT458_CMAP);
+		scr->scr_rcmap[i] = bus_space_read_1(bst, bsh, EVRX_BT4xx_CMAP);
+		scr->scr_gcmap[i] = bus_space_read_1(bst, bsh, EVRX_BT4xx_CMAP);
+		scr->scr_bcmap[i] = bus_space_read_1(bst, bsh, EVRX_BT4xx_CMAP);
 	}
 }
 
@@ -346,5 +352,5 @@ sti_machdep_cnattach(bus_space_tag_t bst, paddr_t base)
 		sticn_bases[i] = (bus_addr_t)base;
 
 	sti_cnattach(&sticn_rom, &sticn_scr, &sticn_tag, sticn_bases,
-	    STI_CODEBASE_ALT);
+	    STI_CODEBASE_M68K);
 }

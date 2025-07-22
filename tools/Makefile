@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.230 2025/04/12 10:51:19 rin Exp $
+#	$NetBSD: Makefile,v 1.232 2025/05/27 14:05:19 christos Exp $
 
 .include <bsd.own.mk>
 .include <bsd.endian.mk>
@@ -97,7 +97,7 @@ dependall-date: dependall-host-mkdep dependall-compat
 # Dependencies in SUBDIR below ordered to maximize parallel ability.
 # See above for special treatment for host-mkdep, compat, and binstall.
 #
-SUBDIR=	host-mkdep compat binstall date \
+SUBDIR=	host-mkdep compat binstall .WAIT date \
 	.WAIT mktemp .WAIT sed .WAIT genassym
 .if ${TOOLS_BUILDRUMP} == "no"
 SUBDIR+= cap_mkdb crunchgen ctags gencat hexdump \
@@ -215,7 +215,7 @@ SUBDIR+=	hp300-mkboot
 .endif
 
 .if ${MACHINE} == "vax"
-SUBDIR+=	libmopcopy vax-mopcopy
+SUBDIR+=	libmopcopy .WAIT vax-mopcopy
 .endif
 
 .if ${MACHINE} == "evbarm" \

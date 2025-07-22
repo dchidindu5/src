@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2011-2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2011-2025 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -174,6 +174,9 @@ flags			return FLAGS;
 icmp-type		return ICMPTYPE;
 code			return CODE;
 any			return ANY;
+user			return USER;
+ether			return ETHER;
+layer-2			return L2;
 
 "/"			return SLASH;
 "{"			return CURLY_OPEN;
@@ -183,6 +186,10 @@ any			return ANY;
 ","			return COMMA;
 "="			return EQ;
 "!"			return EXCL_MARK;
+"<"			return LT;
+">"			return GT;
+"<>"			return XRG;
+"><"			return IRG;
 
 "0x"{HEXDIG} {
 			char *endp, *buf = ecalloc(1, yyleng + 1);
@@ -192,11 +199,21 @@ any			return ANY;
 			return HEX;
 		}
 
+"Ex"{HEXDIG} {
+			yylval.str = estrndup(yytext, yyleng);
+			return ETHERHEX;
+		}
+
 {NUMBER}"."{NUMBER} {
 			char *endp, *buf = estrndup(yytext, yyleng);
 			yylval.fpnum = strtod(buf, &endp);
 			free(buf);
 			return FPNUM;
+		}
+
+{HEXDIG}(":"{HEXDIG}){5} {
+			yylval.str = estrndup(yytext, yyleng);
+			return MACADDR;
 		}
 
 {HEXDIG}":"[0-9a-fA-F:]* {

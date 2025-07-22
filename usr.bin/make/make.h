@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.355 2025/05/18 06:24:27 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.361 2025/07/06 07:11:31 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -861,8 +861,10 @@ void JobReapChild(pid_t, int, bool);
 #endif
 /* main.c */
 void Main_ParseArgLine(const char *);
-int Cmd_Argv(const char *, size_t, const char **, size_t, char *, size_t, bool, bool);
+void Cmd_Argv(const char *, size_t, const char *[5], char *, size_t,
+    bool, bool);
 char *Cmd_Exec(const char *, char **) MAKE_ATTR_USE;
+void Var_ExportStackTrace(const char *, const char *);
 void Error(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 void Fatal(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2) MAKE_ATTR_DEAD;
 void Punt(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2) MAKE_ATTR_DEAD;
@@ -882,6 +884,8 @@ void Parse_End(void);
 #endif
 
 void PrintLocation(FILE *, bool, const GNode *);
+const char *GetParentStackTrace(void);
+char *GetStackTrace(bool);
 void PrintStackTrace(bool);
 void Parse_Error(ParseErrorLevel, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
 bool Parse_VarAssign(const char *, bool, GNode *) MAKE_ATTR_USE;
@@ -1056,7 +1060,9 @@ void Global_Append(const char *, const char *);
 void Global_Delete(const char *);
 void Global_Set_ReadOnly(const char *, const char *);
 
-bool EvalStack_PrintDetails(void) MAKE_ATTR_USE;
+void EvalStack_PushMakeflags(const char *);
+void EvalStack_Pop(void);
+bool EvalStack_Details(Buffer *buf) MAKE_ATTR_USE;
 
 /* util.c */
 typedef void (*SignalProc)(int);
@@ -1179,6 +1185,8 @@ MAKE_INLINE bool MAKE_ATTR_USE
 ch_isdigit(char ch) { return isdigit((unsigned char)ch) != 0; }
 MAKE_INLINE bool MAKE_ATTR_USE
 ch_islower(char ch) { return islower((unsigned char)ch) != 0; }
+MAKE_INLINE bool MAKE_ATTR_USE
+ch_isprint(char ch) { return isprint((unsigned char)ch) != 0; }
 MAKE_INLINE bool MAKE_ATTR_USE
 ch_isspace(char ch) { return isspace((unsigned char)ch) != 0; }
 MAKE_INLINE bool MAKE_ATTR_USE

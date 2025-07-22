@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.339 2025/05/05 17:01:33 gutteridge Exp $
+#	$NetBSD: Makefile,v 1.341 2025/06/04 06:01:59 rillig Exp $
 
 #
 # This is the top-level makefile for building NetBSD. For an outline of
@@ -172,7 +172,7 @@ afterinstall: .PHONY .MAKE
 .endif
 
 _POSTINSTALL=	${:!cd ${.CURDIR}/usr.sbin/postinstall && \
-			${MAKE} -v .OBJDIR!}/postinstall  \
+			${MAKE} -B -v .OBJDIR!}/postinstall  \
 		-m ${MACHINE} -a ${MACHINE_ARCH}
 _POSTINSTALL_ENV= \
 	AWK=${TOOL_AWK:Q}		\
@@ -270,7 +270,7 @@ includes-lib:	.PHONY includes-include includes-sys
 CLEANDIRFILES+= params
 params: .EXEC
 	${_MKMSG_CREATE} params
-	@${PRINT_PARAMS} >${.TARGET}.new
+	@${:D make}${PRINT_PARAMS} >${.TARGET}.new
 	@if cmp -s ${.TARGET}.new ${.TARGET} > /dev/null 2>&1; then \
 		: "params is unchanged" ; \
 		rm ${.TARGET}.new ; \
@@ -320,7 +320,7 @@ distribution buildworld: .PHONY .MAKE
 .if defined(DESTDIR) && ${DESTDIR} != "" && ${DESTDIR} != "/"
 	${MAKEDIRTARGET} . postinstall-fix-obsolete
 	${MAKEDIRTARGET} . postinstall-fix-obsolete_stand
-	${MAKEDIRTARGET} distrib/sets checkflist
+	${:D make}${MAKEDIRTARGET} distrib/sets checkflist
 .endif
 	@echo   "make ${.TARGET} started at:  ${START_TIME}"
 	@printf "make ${.TARGET} finished at: " && date

@@ -1,4 +1,4 @@
-/*	$NetBSD: message.h,v 1.14 2025/01/26 16:25:27 christos Exp $	*/
+/*	$NetBSD: message.h,v 1.16 2025/07/17 19:01:46 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -27,6 +27,7 @@
 #include <isc/refcount.h>
 
 #include <dns/compress.h>
+#include <dns/ede.h>
 #include <dns/masterdump.h>
 #include <dns/types.h>
 
@@ -101,67 +102,38 @@
 #define DNS_MESSAGEFLAG_CD 0x0010U
 
 /*%< EDNS0 extended message flags */
-#define DNS_MESSAGEEXTFLAG_DO 0x8000U
+#define DNS_MESSAGEEXTFLAG_DO 0x8000U /* DNSSEC OK */
+#define DNS_MESSAGEEXTFLAG_CO 0x4000U /* Compact denial of existence OK */
 
 /*%< EDNS0 extended OPT codes */
-#define DNS_OPT_LLQ	      1	 /*%< LLQ opt code */
-#define DNS_OPT_UL	      2	 /*%< UL opt code */
-#define DNS_OPT_NSID	      3	 /*%< NSID opt code */
-#define DNS_OPT_CLIENT_SUBNET 8	 /*%< client subnet opt code */
-#define DNS_OPT_EXPIRE	      9	 /*%< EXPIRE opt code */
-#define DNS_OPT_COOKIE	      10 /*%< COOKIE opt code */
-#define DNS_OPT_TCP_KEEPALIVE 11 /*%< TCP keepalive opt code */
-#define DNS_OPT_PAD	      12 /*%< PAD opt code */
-#define DNS_OPT_KEY_TAG	      14 /*%< Key tag opt code */
-#define DNS_OPT_EDE	      15 /*%< Extended DNS Error opt code */
-#define DNS_OPT_CLIENT_TAG    16 /*%< Client tag opt code */
-#define DNS_OPT_SERVER_TAG    17 /*%< Server tag opt code */
+
+#define DNS_OPT_LLQ	       1  /*%< LLQ opt code */
+#define DNS_OPT_UL	       2  /*%< UL opt code */
+#define DNS_OPT_NSID	       3  /*%< NSID opt code */
+#define DNS_OPT_DAU	       5  /*%< DNSSEC algorithm understood */
+#define DNS_OPT_DHU	       6  /*%< DNSSEC hash understood */
+#define DNS_OPT_N3U	       7  /*%< NSEC3 hash understood */
+#define DNS_OPT_CLIENT_SUBNET  8  /*%< client subnet opt code */
+#define DNS_OPT_EXPIRE	       9  /*%< EXPIRE opt code */
+#define DNS_OPT_COOKIE	       10 /*%< COOKIE opt code */
+#define DNS_OPT_TCP_KEEPALIVE  11 /*%< TCP keepalive opt code */
+#define DNS_OPT_PAD	       12 /*%< PAD opt code */
+#define DNS_OPT_CHAIN	       13 /*%< CHAIN opt code */
+#define DNS_OPT_KEY_TAG	       14 /*%< Key tag opt code */
+#define DNS_OPT_EDE	       15 /*%< Extended DNS Error opt code */
+#define DNS_OPT_CLIENT_TAG     16 /*%< Client tag opt code */
+#define DNS_OPT_SERVER_TAG     17 /*%< Server tag opt code */
+#define DNS_OPT_REPORT_CHANNEL 18 /*%< DNS Reporting Channel */
+#define DNS_OPT_ZONEVERSION    19 /*%< Zoneversion opt code */
 
 /*%< Experimental options [65001...65534] as per RFC6891 */
 
 /*%<
  * The maximum number of EDNS options we allow to set. Reserve space for the
- * options we know about. Extended DNS Errors may occur multiple times, but we
- * will set only one per message (for now).
+ * options we know about. Extended DNS Errors may occur multiple times, see
+ * DNS_EDE_MAX_ERRORS.
  */
-#define DNS_EDNSOPTIONS 8
-
-/*%< EDNS0 extended DNS errors */
-#define DNS_EDE_OTHER		     0	/*%< Other Error */
-#define DNS_EDE_DNSKEYALG	     1	/*%< Unsupported DNSKEY Algorithm */
-#define DNS_EDE_DSDIGESTTYPE	     2	/*%< Unsupported DS Digest Type */
-#define DNS_EDE_STALEANSWER	     3	/*%< Stale Answer */
-#define DNS_EDE_FORGEDANSWER	     4	/*%< Forged Answer */
-#define DNS_EDE_DNSSECINDETERMINATE  5	/*%< DNSSEC Indeterminate */
-#define DNS_EDE_DNSSECBOGUS	     6	/*%< DNSSEC Bogus */
-#define DNS_EDE_SIGNATUREEXPIRED     7	/*%< Signature Expired */
-#define DNS_EDE_SIGNATURENOTYETVALID 8	/*%< Signature Not Yet Valid */
-#define DNS_EDE_DNSKEYMISSING	     9	/*%< DNSKEY Missing */
-#define DNS_EDE_RRSIGSMISSING	     10 /*%< RRSIGs Missing */
-#define DNS_EDE_NOZONEKEYBITSET	     11 /*%< No Zone Key Bit Set */
-#define DNS_EDE_NSECMISSING	     12 /*%< NSEC Missing */
-#define DNS_EDE_CACHEDERROR	     13 /*%< Cached Error */
-#define DNS_EDE_NOTREADY	     14 /*%< Not Ready */
-#define DNS_EDE_BLOCKED		     15 /*%< Blocked */
-#define DNS_EDE_CENSORED	     16 /*%< Censored */
-#define DNS_EDE_FILTERED	     17 /*%< Filtered */
-#define DNS_EDE_PROHIBITED	     18 /*%< Prohibited */
-#define DNS_EDE_STALENXANSWER	     19 /*%< Stale NXDomain Answer */
-#define DNS_EDE_NOTAUTH		     20 /*%< Not Authoritative */
-#define DNS_EDE_NOTSUPPORTED	     21 /*%< Not Supported */
-#define DNS_EDE_NOREACHABLEAUTH	     22 /*%< No Reachable Authority */
-#define DNS_EDE_NETWORKERROR	     23 /*%< Network Error */
-#define DNS_EDE_INVALIDDATA	     24 /*%< Invalid Data */
-
-/*
- * From RFC 8914:
- * Because long EXTRA-TEXT fields may trigger truncation (which is undesirable
- * given the supplemental nature of EDE), implementers and operators creating
- * EDE options SHOULD avoid lengthy EXTRA-TEXT contents.
- *
- * Following this advice we limit the EXTRA-TEXT length to 64 characters.
- */
-#define DNS_EDE_EXTRATEXT_LEN 64
+#define DNS_EDNSOPTIONS 7 + DNS_EDE_MAX_ERRORS
 
 #define DNS_MESSAGE_REPLYPRESERVE	 (DNS_MESSAGEFLAG_RD | DNS_MESSAGEFLAG_CD)
 #define DNS_MESSAGEEXTFLAG_REPLYPRESERVE (DNS_MESSAGEEXTFLAG_DO)
@@ -318,18 +290,16 @@ struct dns_message {
 	ISC_LIST(dns_rdata_t) freerdata;
 	ISC_LIST(dns_rdatalist_t) freerdatalist;
 
-	dns_rcode_t tsigstatus;
-	dns_rcode_t querytsigstatus;
-	dns_name_t *tsigname; /* Owner name of TSIG, if any
-			       * */
+	dns_rcode_t	tsigstatus;
+	dns_rcode_t	querytsigstatus;
+	dns_name_t     *tsigname; /* Owner name of TSIG, if any */
 	dns_rdataset_t *querytsig;
 	dns_tsigkey_t  *tsigkey;
 	dst_context_t  *tsigctx;
 	int		sigstart;
 	int		timeadjust;
 
-	dns_name_t *sig0name; /* Owner name of SIG0, if any
-			       * */
+	dns_name_t  *sig0name; /* Owner name of SIG0, if any */
 	dst_key_t   *sig0key;
 	dns_rcode_t  sig0status;
 	isc_region_t query;
@@ -349,9 +319,9 @@ struct dns_message {
 };
 
 struct dns_ednsopt {
-	uint16_t       code;
-	uint16_t       length;
-	unsigned char *value;
+	uint16_t code;
+	uint16_t length;
+	uint8_t *value;
 };
 
 typedef void (*dns_message_cb_t)(void *arg, isc_result_t result);
@@ -507,7 +477,7 @@ dns_message_totext(dns_message_t *msg, const dns_master_style_t *style,
  * 	";;" will be emitted indicating section name.
  *\li	If #DNS_MESSAGETEXTFLAG_NOHEADERS is cleared, header lines will be
  * 	emitted.
- *\li   If #DNS_MESSAGETEXTFLAG_ONESOA is set then only print the first
+ *\li	If #DNS_MESSAGETEXTFLAG_ONESOA is set then only print the first
  *	SOA record in the answer section.
  *\li	If *#DNS_MESSAGETEXTFLAG_OMITSOA is set don't print any SOA records
  *	in the answer section.
@@ -568,9 +538,9 @@ dns_message_parse(dns_message_t *msg, isc_buffer_t *source,
  * 'preserve_order' setting.
  *
  * Requires:
- *\li	"msg" be valid.
+ *\li	"msg" be a valid message with parsing intent.
  *
- *\li	"buffer" be a wire format buffer.
+ *\li	"source" be a wire format buffer.
  *
  * Ensures:
  *\li	The buffer's data format is correct.
@@ -601,7 +571,9 @@ dns_message_renderbegin(dns_message_t *msg, dns_compress_t *cctx,
  *
  * Requires:
  *
- *\li	'msg' be valid.
+ *\li	'msg' be a valid message with rendering intent.
+ *
+ *\li	dns_message_renderbegin() has not previously been called.
  *
  *\li	'cctx' be valid.
  *
@@ -651,8 +623,6 @@ dns_message_renderreserve(dns_message_t *msg, unsigned int space);
  *
  *\li	'msg' be valid.
  *
- *\li	dns_message_renderbegin() was called.
- *
  * Returns:
  *\li	#ISC_R_SUCCESS		-- all is well.
  *\li	#ISC_R_NOSPACE		-- not enough free space in the buffer.
@@ -672,8 +642,6 @@ dns_message_renderrelease(dns_message_t *msg, unsigned int space);
  *
  *\li	'space' is less than or equal to the total amount of space reserved
  *	via prior calls to dns_message_renderreserve().
- *
- *\li	dns_message_renderbegin() was called.
  */
 
 isc_result_t
@@ -756,7 +724,7 @@ dns_message_firstname(dns_message_t *msg, dns_section_t section);
  *
  * Requires:
  *
- *\li   	'msg' be valid.
+ *\li	'msg' be valid.
  *
  *\li	'section' be a valid section.
  *
@@ -773,7 +741,7 @@ dns_message_nextname(dns_message_t *msg, dns_section_t section);
  *
  * Requires:
  *
- * \li  	'msg' be valid.
+ *\li	'msg' be valid.
  *
  *\li	'section' be a valid section.
  *
@@ -893,7 +861,7 @@ dns_message_removename(dns_message_t *msg, dns_name_t *name,
  *
  * Requires:
  *
- *\li	'msg' be valid, and be a renderable message.
+ *\li	'msg' be a valid message with rendering intent.
  *
  *\li	'name' be a valid absolute name.
  *
@@ -1056,7 +1024,7 @@ dns_message_reply(dns_message_t *msg, bool want_question_section);
  *
  * Requires:
  *
- *\li	'msg' is a valid message with parsing intent, and contains a query.
+ *\li	'msg' is a valid message which contains a query.
  *
  * Ensures:
  *
@@ -1104,7 +1072,7 @@ dns_message_setopt(dns_message_t *msg, dns_rdataset_t *opt);
  *\li	'msg' is a valid message with rendering intent
  *	and no sections have been rendered.
  *
- *\li	'opt' is a valid OPT record or NULL.
+ *\li	'opt' is a valid OPT rdataset or NULL.
  *
  * Ensures:
  *
@@ -1137,21 +1105,20 @@ dns_message_gettsig(dns_message_t *msg, const dns_name_t **owner);
  *
  * Ensures:
  *
- * \li	If 'owner' is not NULL, it will point to the owner name.
+ *\li	If 'owner' is not NULL, it will point to the owner name.
  */
 
 isc_result_t
 dns_message_settsigkey(dns_message_t *msg, dns_tsigkey_t *key);
 /*%<
  * Set the tsig key for 'msg'.  This is only necessary for when rendering a
- * query or parsing a response.  The key (if non-NULL) is attached to, and
- * will be detached when the message is destroyed.
+ * query or parsing a response.  The key (if non-NULL) is attached to
+ * to the message, and will be detached when the message is destroyed.
  *
  * Requires:
  *
- *\li	'msg' is a valid message with rendering intent,
- *	dns_message_renderbegin() has been called, and no sections have been
- *	rendered.
+ *\li	'msg' is a valid message.
+ *
  *\li	'key' is a valid tsig key or NULL.
  *
  * Returns:
@@ -1168,7 +1135,8 @@ dns_message_gettsigkey(dns_message_t *msg);
  *
  * Requires:
  *
- *\li	'msg' is a valid message
+ *\li	'msg' is a valid message, and dns_message_settsigkey() has been
+ *	run previously.
  */
 
 void
@@ -1180,10 +1148,11 @@ dns_message_setquerytsig(dns_message_t *msg, isc_buffer_t *querytsig);
  *
  * Requires:
  *
- *\li	'querytsig' is a valid buffer as returned by dns_message_getquerytsig()
+ *\li	'querytsig' is a valid buffer as returned by dns_message_getquerytsig(),
  *	or NULL
  *
- *\li	'msg' is a valid message
+ *\li	'msg' is a valid message on which dns_message_setquerytsig() has
+ *	not previously been run.
  */
 
 isc_result_t
@@ -1226,7 +1195,7 @@ dns_message_getsig0(dns_message_t *msg, const dns_name_t **owner);
  *
  * Ensures:
  *
- * \li	If 'owner' is not NULL, it will point to the owner name.
+ *\li	If 'owner' is not NULL, it will point to the owner name.
  */
 
 isc_result_t
@@ -1282,7 +1251,7 @@ dns_message_signer(dns_message_t *msg, dns_name_t *signer);
  *
  * Requires:
  *
- *\li	msg is a valid parsed message.
+ *\li	msg is a valid message with parsing intent.
  *\li	signer is a valid name
  *
  * Returns:
@@ -1431,18 +1400,13 @@ dns_message_logfmtpacket(dns_message_t *message, const char *description,
  * For dns_message_logpacket and dns_message_logfmtpacket expect the
  * 'description' to end in a newline.
  *
- * For dns_message_logpacket2 and dns_message_logfmtpacket2
- * 'description' will be emitted at the start of the message followed
- * by the formatted address and a newline.
- *
  * Requires:
- * \li   message be a valid.
- * \li   description to be non NULL.
- * \li   address to be non NULL.
- * \li   category to be valid.
- * \li   module to be valid.
- * \li   style to be valid.
- * \li   mctx to be a valid.
+ *\li	'message' be a valid DNS message.
+ *\li	'description' to be non-NULL.
+ *\li	'address' to be non-NULL.
+ *\li	'category' to be a valid logging category.
+ *\li	'module' to be a valid logging module.
+ *\li	'mctx' to be a valid memory context.
  */
 
 isc_result_t
@@ -1453,14 +1417,12 @@ dns_message_buildopt(dns_message_t *msg, dns_rdataset_t **opt,
  * Built a opt record.
  *
  * Requires:
- * \li   msg be a valid message.
- * \li   opt to be a non NULL and *opt to be NULL.
+ *\li	msg be a valid message.
+ *\li	opt to be a non NULL and *opt to be NULL.
  *
  * Returns:
- * \li	 ISC_R_SUCCESS on success.
- * \li	 ISC_R_NOMEMORY
- * \li	 ISC_R_NOSPACE
- * \li	 other.
+ *\li	 ISC_R_SUCCESS
+ *\li	 ISC_R_NOSPACE
  */
 
 void
@@ -1469,7 +1431,7 @@ dns_message_setclass(dns_message_t *msg, dns_rdataclass_t rdclass);
  * Set the expected class of records in the response.
  *
  * Requires:
- * \li   msg be a valid message with parsing intent.
+ *\li	msg be a valid message with parsing intent.
  */
 
 void
@@ -1479,7 +1441,7 @@ dns_message_setpadding(dns_message_t *msg, uint16_t padding);
  * 0 means no padding (default).
  *
  * Requires:
- * \li	msg be a valid message.
+ *\li	msg be a valid message.
  */
 
 void
@@ -1489,7 +1451,7 @@ dns_message_clonebuffer(dns_message_t *msg);
  * when parsing.
  *
  * Requires:
- * \li   msg be a valid message.
+ *\li	msg be a valid message.
  */
 
 isc_result_t
@@ -1500,8 +1462,8 @@ dns_message_minttl(dns_message_t *msg, const dns_section_t sectionid,
  * message.
  *
  * Requires:
- * \li   msg be a valid rendered message;
- * \li   'pttl != NULL'.
+ *\li	msg be a valid rendered message;
+ *\li	'pttl != NULL'.
  */
 
 isc_result_t
@@ -1512,8 +1474,8 @@ dns_message_response_minttl(dns_message_t *msg, dns_ttl_t *pttl);
  * section. If neither of these are set, return ISC_R_NOTFOUND.
  *
  * Requires:
- * \li   msg be a valid rendered message;
- * \li   'pttl != NULL'.
+ *\li	msg be a valid rendered message;
+ *\li	'pttl != NULL'.
  */
 
 void
