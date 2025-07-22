@@ -913,33 +913,60 @@ int npf_siit64_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
     npf_netmask_t len, npf_addr_t *result_ipv4addr)
 {
 
-    npf_addr_t *ipv6_dest = npc->npc_ips[NPF_DST];
-	npf_addr_t new_ipv4;
+    npf_addr_t *ipv6_dest;
+    uint8_t temp[16];        // Temporary buffer for modified IPv6
+    uint8_t *adjusted;
+    npf_addr_t new_ipv4;
     unsigned offset;
 
-	KASSERT(which == NPF_SRC || which == NPF_DST);
+    KASSERT(which == NPF_SRC || which == NPF_DST);
 
-	if (!npf_iscached(npc, NPC_IP6)) {
+    if (!npf_iscached(npc, NPC_IP6)) {
         return EINVAL;
     }
 
-    // Offset is based on prefix length (RFC 6052)
-    switch (len)
+   ipv6_dest = npc->npc_ips[NPF_DST];
+
+    memset(&new_ipv4, 0, sizeof(npf_addr_t));
+    memset(temp, 0, sizeof(temp));
+
+    // Must be byte-aligned and <= 96
+    if (len % 8 != 0 || len > 96) {
+        return EINVAL;
+    }
+
+    offset = len / 8;
+    adjusted = temp;
+
+    switch (len) 
 	{
-    	case 32: offset = 4; break;
-    	case 40: offset = 5; break;
-    	case 48: offset = 6; break;
-    	case 56: offset = 7; break;
-    	case 64: offset = 8; break;
-    	case 96: offset = 12; break;
+    	case 96:
+        // Last 4 bytes are the IPv4
+        memcpy(&new_ipv4, ((const uint8_t)ipv6_dest) + 12, 4);
+        break;
+
+    	case 32:
+    	case 40:
+    	case 48:
+    	case 56:
+    	case 64:
+        // copy original IPv6 to temp variable
+        memcpy(temp, ipv6_dest, 16);
+
+        // remove the 'u' byte at index 8 
+		//by shifting bytes 9–15 left
+		// according to RFC 6145
+        memmove(&temp[8], &temp[9], 7);  // Now 15-byte adjusted address
+
+        // Extract 4 bytes from new offset
+		adjusted = temp;
+        memcpy(&new_ipv4, adjusted + offset, 4);
+        break;
+
     	default:
         return EINVAL;
     }
 
-	// Copy IPv4 bytes from inside IPv6 address (based on offset)
-    memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, 4);
-
-    // Store result in the output params
     *result_ipv4addr = new_ipv4;
     return 0;
 }
