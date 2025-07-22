@@ -1,4 +1,4 @@
-/*	$NetBSD: rdataslab.c,v 1.10 2025/01/26 16:25:24 christos Exp $	*/
+/*	$NetBSD: rdataslab.c,v 1.12 2025/07/17 19:01:45 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -127,6 +127,9 @@ static void
 rdataset_setownercase(dns_rdataset_t *rdataset, const dns_name_t *name);
 static void
 rdataset_getownercase(const dns_rdataset_t *rdataset, dns_name_t *name);
+static bool
+rdataset_equals(const dns_rdataset_t *rdataset1,
+		const dns_rdataset_t *rdataset2);
 
 /*% Note: the "const void *" are just to make qsort happy.  */
 static int
@@ -667,7 +670,7 @@ dns_rdataslab_merge(unsigned char *oslab, unsigned char *nslab,
 	 */
 	tcurrent += (tcount * 4);
 
-	offsettable = isc_mem_cget(mctx, (ocount + oncount),
+	offsettable = isc_mem_cget(mctx, ocount + oncount,
 				   sizeof(unsigned int));
 #endif /* if DNS_RDATASET_FIXED */
 
@@ -772,8 +775,7 @@ dns_rdataslab_merge(unsigned char *oslab, unsigned char *nslab,
 #if DNS_RDATASET_FIXED
 	fillin_offsets(offsetbase, offsettable, ocount + oncount);
 
-	isc_mem_cput(mctx, offsettable, (ocount + oncount),
-		     sizeof(unsigned int));
+	isc_mem_cput(mctx, offsettable, ocount + oncount, sizeof(unsigned int));
 #endif /* if DNS_RDATASET_FIXED */
 
 	INSIST(tcurrent == tstart + tlength);
@@ -1071,8 +1073,8 @@ void
 dns_slabheader_copycase(dns_slabheader_t *dest, dns_slabheader_t *src) {
 	if (CASESET(src)) {
 		uint_least16_t attr = DNS_SLABHEADER_GETATTR(
-			src, (DNS_SLABHEADERATTR_CASESET |
-			      DNS_SLABHEADERATTR_CASEFULLYLOWER));
+			src, DNS_SLABHEADERATTR_CASESET |
+				     DNS_SLABHEADERATTR_CASEFULLYLOWER);
 		DNS_SLABHEADER_SETATTR(dest, attr);
 		memmove(dest->upper, src->upper, sizeof(src->upper));
 	}
@@ -1089,7 +1091,7 @@ dns_slabheader_reset(dns_slabheader_t *h, dns_db_t *db, dns_dbnode_t *node) {
 	atomic_init(&h->attributes, 0);
 	atomic_init(&h->last_refresh_fail_ts, 0);
 
-	STATIC_ASSERT((sizeof(h->attributes) == 2),
+	STATIC_ASSERT(sizeof(h->attributes) == 2,
 		      "The .attributes field of dns_slabheader_t needs to be "
 		      "16-bit int type exactly.");
 }
@@ -1158,6 +1160,7 @@ dns_rdatasetmethods_t dns_rdataslab_rdatasetmethods = {
 	.clearprefetch = rdataset_clearprefetch,
 	.setownercase = rdataset_setownercase,
 	.getownercase = rdataset_getownercase,
+	.equals = rdataset_equals,
 };
 
 /* Fixed RRSet helper macros */
@@ -1475,4 +1478,19 @@ rdataset_getownercase(const dns_rdataset_t *rdataset, dns_name_t *name) {
 
 unlock:
 	dns_db_unlocknode(header->db, header->node, isc_rwlocktype_read);
+}
+
+static bool
+rdataset_equals(const dns_rdataset_t *rdataset1,
+		const dns_rdataset_t *rdataset2) {
+	if (rdataset1->rdclass != rdataset2->rdclass ||
+	    rdataset1->type != rdataset2->type)
+	{
+		return false;
+	}
+
+	unsigned char *header1 = rdataset1->slab.raw - sizeof(dns_slabheader_t);
+	unsigned char *header2 = rdataset2->slab.raw - sizeof(dns_slabheader_t);
+	return dns_rdataslab_equalx(header1, header2, sizeof(dns_slabheader_t),
+				    rdataset1->rdclass, rdataset2->type);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.684 2025/05/16 20:39:48 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.686 2025/07/11 19:03:01 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: tree.c,v 1.684 2025/05/16 20:39:48 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.686 2025/07/11 19:03:01 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -600,6 +600,19 @@ function_call_descr(const function_call *call)
 	    && call->func->u.ops.left->tn_op == NAME)
 		return call->func->u.ops.left->u.sym->s_name;
 	return type_name(call->func->tn_type->t_subt);
+}
+
+static size_t
+str_len(const tnode_t *tn)
+{
+	const buffer *buf = tn->u.str_literals;
+	if (tn->tn_type->t_subt->t_tspec != CHAR)
+		return buf->len;
+	quoted_iterator it = { .end = 0 };
+	size_t len = 0;
+	while (quoted_next(buf, &it))
+		len++;
+	return len;
 }
 
 /* Create an expression from a unary or binary operator and its operands. */
@@ -1391,10 +1404,13 @@ static void
 check_enum_array_index(const tnode_t *ln, const tnode_t *rn)
 {
 
-	if (ln->tn_op != ADDR || ln->u.ops.left->tn_op != NAME)
+	if (ln->tn_op != ADDR)
+		return;
+	ln = ln->u.ops.left;
+	if (ln->tn_op != NAME && ln->tn_op != STRING)
 		return;
 
-	const type_t *ltp = ln->u.ops.left->tn_type;
+	const type_t *ltp = ln->tn_type;
 	if (ltp->t_tspec != ARRAY || ltp->t_incomplete_array)
 		return;
 
@@ -1415,6 +1431,11 @@ check_enum_array_index(const tnode_t *ln, const tnode_t *rn)
 	lint_assert(INT_MIN <= max_enum_value && max_enum_value <= INT_MAX);
 
 	int max_array_index = ltp->u.dimension - 1;
+	size_t nonnull_dimension = ln->tn_op == STRING
+	    ? str_len(ln)
+	    : ln->u.sym->u.s_array_nonnull_dimension;
+	if (nonnull_dimension > 0)
+		max_array_index = (int)nonnull_dimension - 1;
 	if (max_enum_value == max_array_index)
 		return;
 
@@ -4071,9 +4092,9 @@ convert_constant_check_range_bitand(size_t nsz, size_t osz,
 	if (nsz > osz &&
 	    (nv->u.integer & bit((unsigned int)(osz - 1))) != 0 &&
 	    (nv->u.integer & xmask) != xmask) {
-		/* extra bits set to 0 in conversion of '%s' to '%s', ... */
-		warning(309, type_name(gettyp(ot)),
-		    type_name(tp), op_name(op));
+		/* '%s' converts '%s' with its most significant bit being set to '%s' */
+		warning(309,
+		    op_name(op), type_name(gettyp(ot)), type_name(tp));
 	} else if (nsz < osz &&
 	    (v->u.integer & xmask) != xmask &&
 	    (v->u.integer & xmask) != 0)

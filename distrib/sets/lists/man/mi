@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1805 2025/04/15 22:33:39 nia Exp $
+# $NetBSD: mi,v 1.1807 2025/07/18 19:11:13 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.man				man-sys-root
@@ -1879,6 +1879,7 @@
 ./usr/share/man/cat4/sony.0			man-sys-catman		.cat
 ./usr/share/man/cat4/sound.0			man-sys-catman		.cat
 ./usr/share/man/cat4/sp.0			man-obsolete		obsolete
+./usr/share/man/cat4/sparc/apc.0		man-sys-catman		.cat
 ./usr/share/man/cat4/sparc/audioamd.0		man-sys-catman		.cat
 ./usr/share/man/cat4/sparc/autoconf.0		man-sys-catman		.cat
 ./usr/share/man/cat4/sparc/auxreg.0		man-sys-catman		.cat
@@ -2404,7 +2405,8 @@
 ./usr/share/man/cat5/nsswitch.conf.0		man-net-catman		.cat
 ./usr/share/man/cat5/ntp.conf.0			man-ntp-catman		.cat
 ./usr/share/man/cat5/ntp.keys.0			man-ntp-catman		.cat
-./usr/share/man/cat5/openssl.cnf.0		man-crypto-catman	.cat
+./usr/share/man/cat5/openssl.cnf.0		man-crypto-catman	.cat,openssl=11
+./usr/share/man/cat5/openssl.cnf.0		man-crypto-catman	.cat,openssl=30
 ./usr/share/man/cat5/pam.conf.0			man-sys-catman		pam,.cat
 ./usr/share/man/cat5/passwd.0			man-sys-catman		.cat
 ./usr/share/man/cat5/passwd.conf.0		man-sys-catman		.cat
@@ -5462,6 +5464,7 @@
 ./usr/share/man/man4/sony.4			man-sys-man		.man
 ./usr/share/man/man4/sound.4			man-sys-man		.man
 ./usr/share/man/man4/sp.4			man-obsolete		obsolete
+./usr/share/man/man4/sparc/apc.4		man-sys-man		.man
 ./usr/share/man/man4/sparc/audioamd.4		man-sys-man		.man
 ./usr/share/man/man4/sparc/autoconf.4		man-sys-man		.man
 ./usr/share/man/man4/sparc/auxreg.4		man-sys-man		.man
@@ -5987,7 +5990,8 @@
 ./usr/share/man/man5/nsswitch.conf.5		man-net-man		.man
 ./usr/share/man/man5/ntp.conf.5			man-ntp-man		.man
 ./usr/share/man/man5/ntp.keys.5			man-ntp-man		.man
-./usr/share/man/man5/openssl.cnf.5		man-crypto-man		.man
+./usr/share/man/man5/openssl.cnf.5		man-crypto-man		.man,openssl=11
+./usr/share/man/man5/openssl.cnf.5		man-crypto-man		.man,openssl=30
 ./usr/share/man/man5/pam.conf.5			man-sys-man		pam,.man
 ./usr/share/man/man5/passwd.5			man-sys-man		.man
 ./usr/share/man/man5/passwd.conf.5		man-sys-man		.man

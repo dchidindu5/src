@@ -86,6 +86,7 @@ TESTS =				\
 	autosign		\
 	builtin			\
 	cacheclean		\
+	camp			\
 	case			\
 	catz			\
 	cds			\
@@ -150,10 +151,12 @@ TESTS =				\
 	proxy			\
 	pipelined		\
 	qmin			\
+	query-source		\
 	reclimit		\
 	redirect		\
 	resolver		\
 	rndc			\
+	rollover		\
 	rootkeysentinel		\
 	rpzextra		\
 	rrchecker		\

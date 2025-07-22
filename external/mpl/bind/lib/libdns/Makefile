@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.11 2025/01/26 16:25:52 christos Exp $
+#	$NetBSD: Makefile,v 1.16 2025/06/05 14:53:03 christos Exp $
 
 LIB=dns
 #USE_SHLIBDIR=   yes
@@ -46,7 +46,7 @@ LINTFLAGS+=	-X 298	# conversion from '%s' to '%s' may lose accuracy, arg #%d
 SRCS=   acl.c adb.c badcache.c byaddr.c cache.c callbacks.c catz.c \
 	clientinfo.c compress.c client.c dyndb.c ecs.c db.c \
 	dbiterator.c diff.c dispatch.c dlz.c dns64.c dnsrps.c \
-	dnssec.c ds.c fixedname.c forward.c ipkeylist.c iptable.c \
+	dnssec.c ds.c ede.c fixedname.c forward.c ipkeylist.c iptable.c \
 	journal.c kasp.c keydata.c keymgr.c keystore.c keytable.c \
 	log.c master.c masterdump.c message.c name.c nametree.c \
 	ncache.c nsec.c nsec3.c nta.c order.c peer.c qp.c qpcache.c \
@@ -62,5 +62,18 @@ COPTS.openssl_link.c+= -Wno-error=deprecated-declarations
 COPTS.opensslecdsa_link.c+= -Wno-error=deprecated-declarations
 COPTS.openssleddsa_link.c+= -Wno-error=deprecated-declarations
 COPTS.opensslrsa_link.c+= -Wno-error=deprecated-declarations
+
+
+EXPSYM_SRCS+=	dns.common.expsym
+.if ${MKKERBEROS:Uno} != "no"
+EXPSYM_SRCS+=	dns.kerberos.expsym
+.endif
+
+LIB_EXPSYM=	dns.expsym
+dns.expsym: ${EXPSYM_SRCS}
+	${_MKTARGET_CREATE}
+	LC_ALL=C sort -m ${.ALLSRC} >${.TARGET}.tmp && \
+	${MV} ${.TARGET}.tmp ${.TARGET}
+CLEANFILES+=	dns.expsym dns.expsym.tmp
 
 .include <bsd.lib.mk>

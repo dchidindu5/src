@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.3167 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.3178 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -309,7 +309,7 @@ Changes from NetBSD 10.0 to NetBSD 11.0:
 		From OpenBSD. [msaitoh 20240320]
 	acpihed(4): New driver for PNP0C33 to notify apei(4).
 		[riastradh 20240321]
-	echi(4): If device attach fails, install NULL pmf(4) handlers.
+	ehci(4): If device attach fails, install NULL pmf(4) handlers.
 		Allows suspend/resume on ThinkPad A475. [mrg 20240324]
 	uftdi(4): Add a "match quirk" mechanism that allows the driver to
 		selectively reject individual interfaces, allowing them to
@@ -486,7 +486,7 @@ Changes from NetBSD 10.0 to NetBSD 11.0:
 	gpt(8): Recognize OpenBSD UUID.  [christos 20240819]
 	ifconfig(8): Show link state on -v.  [ozaki-r 20240820]
 	tests: Add tests for shmif(4).  [ozaki-r 20240820]
-	syslogd(8): Add -k option. [gutteridge 20240821]
+	syslogd(8): Add -k option (from RVP). [gutteridge 20240821]
 	gdb(1): Updated to 15.1. [christos 20240825]
 	pkg_install: Import pkg_install-20240821. [wiz 20240825]
 	pkg_install: Import pkg_install-20240826. [wiz 20240826]
@@ -751,3 +751,30 @@ Changes from NetBSD 10.0 to NetBSD 11.0:
 	openresolv: Patch to version 3.16.3 [roy 20250509]
 	pkg_install: Import pkg_install-20250417. [wiz 20250509]
 	dhcpcd: Import version 10.2.3. [roy 20250516]
+	bind: Import version 9.20.9. [christos 20250521]
+	xen: kernel configs now include XEN3.local instead of
+		GENERIC.local. [bad 20250522]
+	hp300: Add mmap(4) support to sti(4) for 362 and 382 framebuffers.
+		X.org server and other framebuffer applications work on
+		these machines.  [tsutsui 20250525]
+	npf(7): Add support for user/group-based filtering. [joe 20250531]
+	igc(4): Support for hardware TSO. [rin 20250601]
+	libfido2: Import 1.16.0 [christos 20250602]
+	evbarm: Add driver for Rockchip USB-C PHY, mostly from OpenBSD.
+		[rjs 20250603]
+	iic(4): Add driver for Onsemi FUSB302B USB-C power controller,
+		mostly from OpenBSD. [rjs 20250603]
+	make(1): Add POSIX $^ internal macro support, as an alias for
+		$> (.ALLSRC) [rillig 20250628]
+	expr(1): Use multibyte code points instead of bytes for ":" and
+		"length", required by POSIX. [rillig 20250629]
+	macppc: Fan control for PowerMac7,2. [macallan 20250701]
+	mount(8): Reduced information printed with "mount -v spec fs",
+		use -vv for previous output. [kre 20250701]
+	npf(7): Add layer 2 filtering support. [joe 20250701]
+	libc: Update UTF-8 tables to Unicode 16.0. [wiz 20250705]
+	macppc: Improve support for G5/G4 i2c/openpic. [macallan 20250705]
+	evbarm: Add driver for Amlogic Meson I2C controller - contributed
+		by Vincent Defert. [rjs 20250705]
+	bind: Import version 9.20.11. [christos 20250717]
+	GCC: Updated to GCC 12.5.0.  [mrg 20250721]

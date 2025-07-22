@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1419 2025/05/13 21:36:26 nia Exp $
+#	$NetBSD: bsd.own.mk,v 1.1428 2025/07/21 21:21:34 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -102,8 +102,12 @@ MKGCCCMDS?=	no
 #
 # Build GCC with the "isl" library enabled.
 # The alpha port does not work with it, see GCC PR's 84204 and 84353.
+# Other ports don't have vector units GCC can target.
 #
-.if ${MACHINE} == "alpha"
+.if ${MACHINE} == "alpha" || \
+    ${MACHINE} == "vax" || \
+    ${MACHINE_CPU} == "m68k" || \
+    ${MACHINE_CPU} == "sh3"
 NOGCCISL=	# defined
 .endif
 
@@ -141,12 +145,14 @@ MKGDBSERVER?=	no
 #
 # What OpenSSL is used?
 #
-HAVE_OPENSSL?=	30
+HAVE_OPENSSL?=	35
 
-.if ${HAVE_OPENSSL} == 30
-EXTERNAL_OPENSSL_SUBDIR=openssl
+.if ${HAVE_OPENSSL} == 35
+EXTERNAL_OPENSSL_SUBDIR=apache2/openssl
+.elif ${HAVE_OPENSSL} == 30
+EXTERNAL_OPENSSL_SUBDIR=bsd/openssl
 .elif ${HAVE_OPENSSL} == 11
-EXTERNAL_OPENSSL_SUBDIR=openssl.old
+EXTERNAL_OPENSSL_SUBDIR=bsd/openssl.old
 .else
 EXTERNAL_OPENSSL_SUBDIR=/does/not/exist
 .endif
@@ -256,9 +262,9 @@ EXTERNAL_JEMALLOC_SUBDIR = /does/not/exist
 
 .if empty(.MAKEFLAGS:tW:M*-V .OBJDIR*)
 .if defined(MAKEOBJDIRPREFIX) || defined(MAKEOBJDIR)
-PRINTOBJDIR=	${MAKE} -r -V .OBJDIR -f /dev/null xxx
+PRINTOBJDIR=	${MAKE} -B -r -V .OBJDIR -f /dev/null xxx
 .else
-PRINTOBJDIR=	${MAKE} -V .OBJDIR
+PRINTOBJDIR=	${MAKE} -B -V .OBJDIR
 .endif
 .else
 PRINTOBJDIR=	echo /error/bsd.own.mk/PRINTOBJDIR # avoid infinite recursion
@@ -743,6 +749,14 @@ CC_WNO_STRINGOP_OVERFLOW=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-
 CC_WNO_STRINGOP_OVERREAD=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 12:? -Wno-stringop-overread :}
 CC_WNO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-stringop-truncation :}
 
+# relative relocs are only supported in gnu ld for ppc64 and x86
+.if ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "i386"  || \
+    ${MACHINE_ARCH} == "powerpc64"
+LD_PACK_RELATIVE_RELOCS=	-Wl,-z,pack-relative-relocs
+LD_NOPACK_RELATIVE_RELOCS=	-Wl,-z,nopack-relative-relocs
+.endif
+
 # For each ${MACHINE_CPU}, list the ports that use it.
 MACHINES.aarch64=	evbarm
 MACHINES.alpha=		alpha
@@ -1182,6 +1196,7 @@ MKCTF?=		yes
     ${MACHINE_ARCH} == "x86_64" || \
     ${MACHINE_ARCH:Maarch64*} || \
     ${MACHINE_CPU} == "arm" || \
+    ${MACHINE} == "macppc" || \
     ${MACHINE_CPU} == "m68k" || \
     ${MACHINE_CPU} == "mips" || \
     ${MACHINE_CPU} == "sh3" || \
@@ -1199,7 +1214,6 @@ MKPIE?=		no
 #
 .if ${MACHINE} == "i386" || \
     ${MACHINE} == "amd64" || \
-    ${MACHINE} == "sparc64" || \
     ${MACHINE_ARCH:Maarch64*} || \
     ${MACHINE_MIPS64}
 MKRELRO?=	partial

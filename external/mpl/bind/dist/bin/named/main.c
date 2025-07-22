@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.18 2025/01/26 16:24:33 christos Exp $	*/
+/*	$NetBSD: main.c,v 1.20 2025/07/17 19:01:43 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -133,6 +133,7 @@ static int maxudp = 0;
 /*
  * -T options:
  */
+static bool cookiealwaysvalid = false;
 static bool dropedns = false;
 static bool ednsformerr = false;
 static bool ednsnotimp = false;
@@ -315,7 +316,7 @@ usage(void) {
 			"             [-S sockets] [-t chrootdir] [-u "
 			"username] [-U listeners]\n"
 			"             [-m "
-			"{usage|trace|record|size|mctx}]\n"
+			"{usage|trace|record}]\n"
 			"             [-M fill|nofill]\n"
 			"usage: named [-v|-V|-C]\n");
 }
@@ -642,6 +643,7 @@ printversion(bool verbose) {
 	printf("threads support is enabled\n");
 
 	isc_mem_create(&mctx);
+	isc_mem_setname(mctx, "main");
 	result = dst_lib_init(mctx, named_g_engine);
 	if (result == ISC_R_SUCCESS) {
 		isc_buffer_init(&b, buf, sizeof(buf));
@@ -719,7 +721,9 @@ parse_T_opt(char *option) {
 	 * force the server to behave (or misbehave) in
 	 * specified ways for testing purposes.
 	 */
-	if (!strcmp(option, "dropedns")) {
+	if (!strcmp(option, "cookiealwaysvalid")) {
+		cookiealwaysvalid = true;
+	} else if (!strcmp(option, "dropedns")) {
 		dropedns = true;
 	} else if (!strcmp(option, "ednsformerr")) {
 		ednsformerr = true;
@@ -1327,6 +1331,9 @@ setup(void) {
 	/*
 	 * Modify server context according to command line options
 	 */
+	if (cookiealwaysvalid) {
+		ns_server_setoption(sctx, NS_SERVER_COOKIEALWAYSVALID, true);
+	}
 	if (disable4) {
 		ns_server_setoption(sctx, NS_SERVER_DISABLE4, true);
 	}

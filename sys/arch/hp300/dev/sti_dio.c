@@ -1,4 +1,4 @@
-/*	$NetBSD: sti_dio.c,v 1.1 2025/05/01 06:11:21 tsutsui Exp $	*/
+/*	$NetBSD: sti_dio.c,v 1.4 2025/05/28 17:33:38 tsutsui Exp $	*/
 /*	$OpenBSD: sti_dio.c,v 1.1 2011/08/18 20:02:57 miod Exp $	*/
 
 /*
@@ -27,7 +27,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sti_dio.c,v 1.1 2025/05/01 06:11:21 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sti_dio.c,v 1.4 2025/05/28 17:33:38 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -40,11 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: sti_dio.c,v 1.1 2025/05/01 06:11:21 tsutsui Exp $");
 #include <hp300/dev/diodevs.h>
 #include <hp300/dev/sti_diovar.h>
 #include <hp300/dev/sti_machdep.h>
-
-/* DIO attachment defines */
-#define STI_DIO_SCODE_OFFSET	0x02	/* offset to SGC rom, in select codes */
-#define STI_DIO_SIZE		0x10	/* expected total device size
-					   in DIO-II size units */
 
 static int  sti_dio_match(device_t, cfdata_t, void *);
 static void sti_dio_attach(device_t, device_t, void *);
@@ -122,7 +117,7 @@ sti_dio_attach(device_t parent, device_t self, void *aux)
 			ssc->bases[i] = base;
 
 		if (sti_attach_common(ssc, bst, bst, romh,
-		    STI_CODEBASE_ALT) != 0)
+		    STI_CODEBASE_M68K) != 0)
 			return;
 	}
 
@@ -147,7 +142,7 @@ sti_dio_probe(bus_space_tag_t bst, int scode)
 	if (!DIO_ISDIOII(scode))
 		return 0;
 
-	addr = (bus_addr_t)(bus_addr_t)dio_scodetopa(scode);
+	addr = (bus_addr_t)dio_scodetopa(scode);
 	if (bus_space_map(bst, addr, PAGE_SIZE, 0, &bsh))
 		return 0;
 	span = bus_space_read_1(bst, bsh, DIOII_SIZEOFF);

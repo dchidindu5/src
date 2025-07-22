@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.2111 2025/05/16 13:20:17 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.2122 2025/07/21 05:46:35 mrg Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -123,12 +123,12 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.20.4/MPL
-Current Vers:	9.20.4/MPL
+Version:	9.20.11/MPL
+Current Vers:	9.20.11/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
-Date:		2025-01-26
+Date:		2025-07-17
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-announce
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-users
 Responsible:	christos
@@ -459,12 +459,12 @@ Notes:
 There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
-Version:	10.5.0/12.4.0
-Current Vers:	10.5.0/12.4.0/13.3.0/14.2.0
+Version:	10.5.0/12.5.0
+Current Vers:	10.5.0/12.5.0/13.3.0/14.2.0/15.1.0
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	https://www.gnu.org/software/gcc/
-Date:		2024-06-30
+Date:		2025-07-21
 Mailing List:	gcc-bugs@gnu.org
 Responsible:	mrg, christos, skrll
 License:	GPLv3, LGPLv3.1
@@ -705,7 +705,7 @@ directory.
 
 Package:	less
 Version:	less-643
-Current Vers:	less-668
+Current Vers:	less-679
 Maintainer:	Mark Nudelman <markn@greenwoodsoftware.com>
 Archive Site:	http://www.greenwoodsoftware.com/less/download.html
 Home Page:	http://www.greenwoodsoftware.com/less/
@@ -722,11 +722,11 @@ Talk to mrg before importing any new version.
 
 Package:	libarchive
 Version:	3.7.7
-Current Vers:	3.7.9
+Current Vers:	3.8.1
 Maintainer:	kientzle@freebsd.org, joerg@NetBSD.org
 Archive Site:	https://github.com/libarchive/libarchive/releases
 Home Page: 	http://www.libarchive.org
-Date:		2024-10-17
+Date:		2025-07-01
 Responsible:	joerg
 License:	BSD (2-clause)
 Location:	external/bsd/libarchive/dist
@@ -1131,35 +1131,36 @@ markus is very cooperative about it):
 - LIBWRAP support is maintained (now in sshd-session.c)
 
 Package:	OpenSSL
-Version:	1.0.2o/1.1.1t/3.0.16
-Current Vers:	1.0.2u/1.1.1w/3.0.16/3.2.4/3.3.3/3.4.1/3.5.0
+Version:	1.0.2o/1.1.1t/3.0.16/3.5.1
+Current Vers:	1.0.2u/1.1.1w/3.0.16/3.2.4/3.3.3/3.4.1/3.5.1
 Maintainer:	The OpenSSL Project
 Archive Site:	https://github.com/openssl/openssl/releases
 Home Page:	http://www.openssl.org/
-Date:		2025-04-16
+Date:		2025-07-16
 Mailing List:	openssl-announce@openssl.org
 Responsible:	christos, mjf, tls, riastradh, spz
 License:	Apache2
-Location:	crypto/external/bsd/openssl/dist
+Location:	crypto/external/apache2/openssl/dist
 Vendor tag:	OPENSSL
 Release tag:	openssl-x-y-z (openssl-x-y-zw in past with lettered releases)
-Current tag:	openssl-3-0-16
+Current tag:	openssl-3-5-1
 Notes:
-- Next update to be in crypto/external/apache2/openssl/dist, since
-  OpenSSL 3.0 was relicensed as Apache2. We might consider reverting
-  patches for idea, rc2, rc5 to retain binary compatibility with stock
-  openssl and bump major.
 - Run openssl2netbsd to get rid of the RCSID identifiers
 - import
 - configure and build after importing in the import directory
-- check the generated files against the ones in the include directory
-  and merge changes
+- check the generated files against the ones in the include and source
+  directories and merge changes
 - copy the toplevel libFOO.ld files to our FOO.map linker files (the legacy.ld
   is in providers/), and sync the FOO.expsym files if there were changes
+  remember to add the extra sha symbol renaming stuff to libcrypto.
 - run make in /usr/src/crypto/external/bsd/openssl/lib/libcrypto/man
   to regen man pages.
 - run make in /usr/src/crypto/external/bsd/openssl/lib/libcrypto/arch/*
   to regen assembly files
+- make sure that the lib/libcrypto/gen script is up to date with
+  util/perl/OpenSSL/stackhash.pm
+- compare the list of files in each of the libraries with the one from
+  the openssl build with ar t | sed -e 's/lib[a-z]*-lib-//' | sort -u
 - run openssl speed -evp aes-256-cbc and compare the results with the 
   autoconf build
 
@@ -1257,11 +1258,11 @@ now to do a new import.
 
 Package:	Postfix
 Version:	3.10.1
-Current Vers:	3.8.7, 3.9.2, 3.10.1
+Current Vers:	3.10.2
 Maintainer:	Wietse Venema <wietse@porcupine.org>
 Archive Site:
 Home Page:	http://www.postfix.org/
-Date: 		2025-02-25
+Date: 		2025-05-19
 Mailing List:	postfix-users@postfix.org
 Responsible:	christos
 License:	IBM Public License. See also src/external/ibm-public/postfix/dist.
@@ -2309,12 +2310,12 @@ Location:	external/bsd/pam-u2f
 Notes:
 
 Package:	libfido2
-Version:	1.13.0
-Current Vers:	1.13.0
+Version:	1.16.0
+Current Vers:	1.16.0
 Maintainer:	Yubico
 Archive Site:	https://github.com/Yubico/libfido2
 Home Page:	https://developers.yubico.com/libfido2/
-Date:		2023-08-11
+Date:		2025-06-02
 Mailing List:
 Responsible:	christos
 License:	bsd
