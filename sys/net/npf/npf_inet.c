@@ -788,6 +788,79 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 	return true;
 }
 
+int
+npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
+	const npf_addr_t *addr, u_int which)
+{
+	struct mbuf *m = *nbuf;
+	struct ip *ip4;
+	struct ip6_hdr *ip6;
+	size_t hlen;
+
+	KASSERT(npf_iscached(npc, NPC_LAYER4));
+	KASSERT(which == NPF_SRC || which == NPF_DST);
+
+	// Determine address 
+	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_srcip;
+	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_dstip;
+
+	// remove the existing IP header 
+	m_adj(m, npc->npc_hlen);
+
+	// If the original packet is IPv6, 
+	//I'm going to rewrite it into IPv4 — 
+	// so I need to reserve space for an IPv4 header.
+
+	switch (npc->npc_info) {
+	case NPC_IP6:
+		hlen = sizeof(struct ip);
+		break;
+	case NPC_IP4:
+		hlen = sizeof(struct ip6_hdr);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	m = m_prepend(m, hlen, M_DONTWAIT);
+	if (m == NULL) {
+		return ENOMEM;
+	}
+	*nbuf = m;
+
+	switch (npc->npc_info) {
+	case NPC_IP6: {
+		/* IPv6 -> IPv4 */
+		const struct ip6_hdr *oip6 = npc->npc_ip.v6;
+		ip4 = mtod(m, struct ip *);
+		memset(ip4, 0, sizeof(struct ip));
+
+		ip4->ip_v     = IPVERSION;
+		ip4->ip_hl    = sizeof(struct ip) >> 2;
+		ip4->ip_tos   = 0;
+		ip4->ip_len   = htons(hlen + ntohs(oip6->ip6_plen));
+		ip4->ip_id    = htons(0);
+		ip4->ip_off   = htons(IP_DF);
+		ip4->ip_ttl   = oip6->ip6_hlim;
+		ip4->ip_p     = npc->npc_next_proto;
+		ip4->ip_src.s_addr = src->s6_addr32[0];
+		ip4->ip_dst.s_addr = dst->s6_addr32[0];
+		break;
+
+		// case npc_ip4:
+		// ip4 -> ip6
+		//break;
+	}
+	
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
+
+
+
 /*
  * npf_napt_rwr: perform address and/or port translation.
  */
@@ -965,7 +1038,7 @@ npf_siit64_rwr(const npf_cache_t *npc, u_int which,
 
         // Step 2: remove the 'u' byte at index 8 
 		//by shifting bytes 9–15 left
-		// according to RFC 6145
+		// according to RFC 6052
         memmove(&temp[8], &temp[9], 7);  // Now 15-byte adjusted address
 
         // Step 3: extract 4 bytes from new offset
@@ -1096,7 +1169,7 @@ int npf_siit64_rwr(
         // Standard case: last 4 bytes are IPv4
         memcpy(&new_ipv4, ipv6_bytes + 12, 4);
     } else {
-        // RFC 6145: must remove 'u' byte at byte 8 and shift
+        // RFC 6052: must remove 'u' byte at byte 8 and shift
         // Step 1: copy IPv6 address into temp
         memcpy(temp, ipv6_bytes, 16);
 
@@ -1170,5 +1243,102 @@ int npf_siit64_rwr(
 
     return 0;
 }
+*/
 
+// error code
+/*
+int npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
+    const npf_addr_t *src, const npf_addr_t *dst)
+{
+	struct mbuf *m = *nbuf;
+	struct ip *ip4;
+	struct ip6_hdr *ip6;
+	size_t hlen;
+
+	// Strip the existing IP header based on cached header length.
+	m_adj(m, npc->npc_hlen);
+
+	// /* Determine the size of the new header to prepend.
+	switch (npc->npc_info) {
+	case NPC_IP6:
+		hlen = sizeof(struct ip);        //  IPv6 -> IPv4 translation 
+		break;
+	case NPC_IP4:
+		hlen = sizeof(struct ip6_hdr);   // IPv4 -> IPv6 translation 
+		break;
+	default:
+		return EINVAL;
+	}
+
+	// Prepend space for the new IP header. 
+	m = m_prepend(m, hlen, M_DONTWAIT);
+	if (m == NULL) {
+		return ENOMEM;
+	}
+	*nbuf = m;
+
+	// Perform the translation depending on original address family.
+	switch (npc->npc_info) {
+	case NPC_IP6: {
+		// /* IPv6 → IPv4 
+		const struct ip6_hdr *oip6 = npc->npc_ip.v6;
+		ip4 = mtod(m, struct ip *);
+		memset(ip4, 0, sizeof(struct ip));
+
+		ip4->ip_v     = IPVERSION;
+		ip4->ip_hl    = sizeof(struct ip) >> 2;
+		ip4->ip_tos   = 0;
+		ip4->ip_len   = htons(hlen + ntohs(oip6->ip6_plen));
+		ip4->ip_id    = htons(0)
+		ip4->ip_off   = htons(IP_DF);
+		ip4->ip_ttl   = oip6->ip6_hlim;
+		ip4->ip_p     = npc->npc_next_proto;
+		ip4->ip_src.s_addr = src->s6_addr32[0];
+		ip4->ip_dst.s_addr = dst->s6_addr32[0];
+		break;
+	}
+		//version 1
+	case NPC_IP4: {
+		// IPv4 → IPv6 
+		const struct ip *oip4 = npc->npc_ip.v4;
+		ip6 = mtod(m, struct ip6_hdr *);
+		memset(ip6, 0, sizeof(struct ip6_hdr));
+
+		ip6->ip6_vfc  = IPV6_VERSION;
+		ip6->ip6_nxt  = npc->npc_next_proto;
+		ip6->ip6_hlim = (oip4->ip_ttl < IPV6_DEFHLIM) ? oip4->ip_ttl : IPV6_DEFHLIM;
+
+		uint16_t payload_len = ntohs(oip4->ip_len) - (oip4->ip_hl << 2);
+		ip6->ip6_plen = htons(payload_len);
+
+		memcpy(&ip6->ip6_src, src, sizeof(struct in6_addr));
+		memcpy(&ip6->ip6_dst, dst, sizeof(struct in6_addr));
+		break;
+
+		//version 2
+
+		case NPC_IP4: {
+		// IPv4 -> IPv6 
+		const struct ip *oip4 = npc->npc_ip.v4;
+		ip6 = mtod(m, struct ip6_hdr *);
+		memset(ip6, 0, sizeof(struct ip6_hdr));
+
+		ip6->ip6_vfc  = IPV6_VERSION;
+		ip6->ip6_nxt  = npc->npc_next_proto;
+		ip6->ip6_hlim = (oip4->ip_ttl < IPV6_DEFHLIM) ? oip4->ip_ttl : IPV6_DEFHLIM;
+
+		uint16_t payload_len = ntohs(oip4->ip_len) - (oip4->ip_hl << 2);
+		ip6->ip6_plen = htons(payload_len);
+
+		memcpy(&ip6->ip6_src, src, sizeof(struct in6_addr));
+		memcpy(&ip6->ip6_dst, dst, sizeof(struct in6_addr));
+		break;
+	}
+	}
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
 */
