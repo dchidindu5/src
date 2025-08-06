@@ -501,7 +501,7 @@ uint64_t	npf_nat_getid(const npf_natpolicy_t *);
 void		npf_nat_freealg(npf_natpolicy_t *, npf_alg_t *);
 
 int		npf_do_nat(npf_cache_t *, npf_conn_t *, const unsigned);
-int 	npf_64_rwrheader(npf_cache_t *, nbuf_t **, const npf_addr_t *, u_int);
+int 	npf_nat64_rwrheader(npf_cache_t *, nbuf_t **, const npf_addr_t *, u_int);
 npf_nat_t *	npf_nat_share_policy(npf_cache_t *, npf_conn_t *, npf_nat_t *);
 void		npf_nat_destroy(npf_conn_t *, npf_nat_t *);
 void		npf_nat_getorig(npf_nat_t *, npf_addr_t **, in_port_t *);

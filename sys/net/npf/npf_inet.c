@@ -737,6 +737,7 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 	KASSERT(which == NPF_SRC || which == NPF_DST);
 
 	if (npf_iscached(npc, NPC_IP4)) {
+		// thinking loud
 		struct ip *ip = npc->npc_ip.v4;
 		uint16_t ipsum = ip->ip_sum;
 
@@ -789,10 +790,10 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 }
 
 int
-npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
+npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	const npf_addr_t *addr, u_int which)
 {
-	struct mbuf *m = *nbuf;
+	mbuf *m = nbuf_head_mbuf(npc->npc_nbuf);
 	struct ip *ip4;
 	struct ip6_hdr *ip6;
 	size_t hlen;
@@ -800,16 +801,17 @@ npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	KASSERT(npf_iscached(npc, NPC_LAYER4));
 	KASSERT(which == NPF_SRC || which == NPF_DST);
 
-	// Determine address 
-	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_srcip;
-	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_dstip;
+	// Determine address
+	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_ips[NPF_SRC];
+	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_ips[NPF_DST];
 
-	// remove the existing IP header 
+	// remove the existing IP header
 	m_adj(m, npc->npc_hlen);
 
-	// If the original packet is IPv6, 
-	//I'm going to rewrite it into IPv4 — 
+	// If the original packet is IPv6,
+	//I'm going to rewrite it into IPv4 —
 	// so I need to reserve space for an IPv4 header.
+	// and vice versa
 
 	switch (npc->npc_info) {
 	case NPC_IP6:
@@ -843,7 +845,10 @@ npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		ip4->ip_off   = htons(IP_DF);
 		ip4->ip_ttl   = oip6->ip6_hlim;
 		ip4->ip_p     = npc->npc_next_proto;
+		// router's public ipv4, set on the npf rule.
 		ip4->ip_src.s_addr = src->s6_addr32[0];
+		// ipv4 extracted from the ipv6 address
+		// that we got from our DNS
 		ip4->ip_dst.s_addr = dst->s6_addr32[0];
 		break;
 
@@ -851,15 +856,12 @@ npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		// ip4 -> ip6
 		//break;
 	}
-	
 	default:
 		return EINVAL;
 	}
 
 	return 0;
 }
-
-
 
 /*
  * npf_napt_rwr: perform address and/or port translation.
@@ -1036,7 +1038,7 @@ npf_siit64_rwr(const npf_cache_t *npc, u_int which,
         // Step 1: copy original IPv6 to temp variable
         memcpy(temp, ipv6_dest, 16);
 
-        // Step 2: remove the 'u' byte at index 8 
+        // Step 2: remove the 'u' byte at index 8
 		//by shifting bytes 9–15 left
 		// according to RFC 6052
         memmove(&temp[8], &temp[9], 7);  // Now 15-byte adjusted address
@@ -1247,7 +1249,7 @@ int npf_siit64_rwr(
 
 // error code
 /*
-int npf_64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
+int npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
     const npf_addr_t *src, const npf_addr_t *dst)
 {
 	struct mbuf *m = *nbuf;
