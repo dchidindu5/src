@@ -235,6 +235,10 @@ npf_natpolicy_create(npf_t *npf, const nvlist_t *nat, npf_ruleset_t *rset)
 		break;
 	case NPF_ALGO_NETMAP:
 		break;
+	// I THINK THIS SHOULD BE HERE!!
+	case NPF_ALGO_NAT64:
+	/*maybe i could write a logic to  
+	verify the address length or something like that*/
 	case NPF_ALGO_IPHASH:
 	case NPF_ALGO_RR:
 	default:
@@ -770,6 +774,21 @@ npf_do_nat(npf_cache_t *npc, npf_conn_t *con, const unsigned di)
 		if (nbuf_cksum_barrier(nbuf, di)) {
 			npf_recache(npc);
 		}
+		// I'm thinking that since npf_snat_translate() already 
+		// handles NPF_ALGO_NAT64 internally, there's no need to add a branch on np->n_type == NPF_NAT64 in npf_do_nat()
+		// or even a function npf_nat64_translate()
+
+		/* if you notice the static inline npf_snat_translate() uses only
+		 np->n_algo to select the transformation.
+
+		The NAT64 logic is cleanly encapsulated inside this switch case in npf_snat_translate()*/
+	
+
+		/* Handle NAT64 */
+   		 //if (np->n_type == NPF_NAT64) {
+   	   //  error = npf_nat64_translate(npc, np, flow);
+   		// }
+
 		error = npf_snat_translate(npc, np, flow);
 		npf_natpolicy_release(np);
 		return error;

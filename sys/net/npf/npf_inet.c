@@ -737,7 +737,7 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 	KASSERT(which == NPF_SRC || which == NPF_DST);
 
 	if (npf_iscached(npc, NPC_IP4)) {
-		// thinking loud
+		// thinking aloud
 		struct ip *ip = npc->npc_ip.v4;
 		uint16_t ipsum = ip->ip_sum;
 
@@ -852,9 +852,9 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		ip4->ip_dst.s_addr = dst->s6_addr32[0];
 		break;
 
-		// case npc_ip4:
-		// ip4 -> ip6
-		//break;
+	case NPC_IP4:
+		// logic for nat ip4 -> ip6 goes here
+		break;
 	}
 	default:
 		return EINVAL;
@@ -1056,7 +1056,7 @@ npf_siit64_rwr(const npf_cache_t *npc, u_int which,
     return 0;
 }
 
-
+// IGNORE PLEASE
 // Handles only /96 logic
 // incomplete logic
 int npf_siit64_rwr(
