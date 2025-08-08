@@ -804,7 +804,7 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	// Determine address
 	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_ips[NPF_SRC];
 	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_ips[NPF_DST];
-
+//  add npc layer3
 	// remove the existing IP header
 	m_adj(m, npc->npc_hlen);
 

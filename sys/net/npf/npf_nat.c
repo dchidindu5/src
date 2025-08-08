@@ -111,6 +111,7 @@ struct npf_natpolicy {
 
 	unsigned		n_algo;
 	union {
+		unsigned    nat64_plen;
 		unsigned	n_rr_idx;
 		uint16_t	n_npt66_adj;
 	};
@@ -239,6 +240,8 @@ npf_natpolicy_create(npf_t *npf, const nvlist_t *nat, npf_ruleset_t *rset)
 	case NPF_ALGO_NAT64:
 	/*maybe i could write a logic to  
 	verify the address length or something like that*/
+		np->nat64_plen = dnvlist_get_number(nat, "nat64-plen", 0);
+		break;
 	case NPF_ALGO_IPHASH:
 	case NPF_ALGO_RR:
 	default:
@@ -274,6 +277,9 @@ npf_natpolicy_export(const npf_natpolicy_t *np, nvlist_t *nat)
 	case NPF_ALGO_NPT66:
 		nvlist_add_number(nat, "npt66-adj", np->n_npt66_adj);
 		break;
+	case NPF_ALGO_NAT64:
+		//MAYBE SOMETHING SHOULD BE HERE, NOT SURE YET
+		nvlist_add_number(nat, "nat64-plen", np->n_nat64_plen);
 	}
 	return 0;
 }
@@ -782,7 +788,6 @@ npf_do_nat(npf_cache_t *npc, npf_conn_t *con, const unsigned di)
 		 np->n_algo to select the transformation.
 
 		The NAT64 logic is cleanly encapsulated inside this switch case in npf_snat_translate()*/
-	
 
 		/* Handle NAT64 */
    		 //if (np->n_type == NPF_NAT64) {

@@ -1064,6 +1064,20 @@ npf_nat_setnpt66(nl_nat_t *nt, uint16_t adj)
 }
 
 int
+npf_nat_setnat64plen(nl_nat_t *nt, unsigned plen)
+{
+	int error;
+
+	if ((error = npf_nat_setalgo(nt, NPF_ALGO_NAT64)) != 0) {
+		return error;
+	}
+	nvlist_add_number(nt->rule_dict, "nat64-plen", plen);
+	return nvlist_error(nt->rule_dict);
+
+
+}
+
+int
 npf_nat_gettype(nl_nat_t *nt)
 {
 	return dnvlist_get_number(nt->rule_dict, "type", 0);

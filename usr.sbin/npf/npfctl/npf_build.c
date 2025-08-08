@@ -822,7 +822,7 @@ npfctl_dnat_check(const addr_port_t *ap, const unsigned algo)
 void
 npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
     const addr_port_t *ap1, const addr_port_t *ap2, const npfvar_t *popts,
-    const filt_opts_t *fopts, unsigned algo)
+    const filt_opts_t *fopts, unsigned algo, unsigned plen)
 {
 	fam_addr_mask_t *am1 = NULL, *am2 = NULL;
 	nl_nat_t *nt1 = NULL, *nt2 = NULL;
@@ -902,7 +902,21 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 				yyerror("one address must be IPv6 and "
 					"the other IPv4 and vice versa");
 			}
+				/* Validate prefix length (plen). */
+				/*am1 and am2 are addresses parsed from the NAT rule (IPv4 or IPv6).
+
+				We're checking which one is the IPv6 address to extract its fam_mask (prefix length).
+				Then we check if it's a valid value 
+				and throw an error otherwise.*/
+			const npf_netmask_t plen = (am1->fam_family == AF_INET6)
+				? am1->fam_mask : am2->fam_mask;
+
+				if (plen != 32 && plen != 40 && plen != 48 &&
+	    		plen != 56 && plen != 64 && plen != 96) {
+				yyerror("invalid NAT64 prefix length");
+			}
 			break;
+
 		case NPF_ALGO_NONE:
 			if ((am1 && am1->fam_mask != NPF_NO_NETMASK) ||
 			    (am2 && am2->fam_mask != NPF_NO_NETMASK)) {
@@ -960,6 +974,13 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 		npf_nat_setnpt66(nt1, ~adj);
 		npf_nat_setnpt66(nt2, adj);
 		break;
+	case NPF_ALGO_NAT64:
+		if (nt1){
+			npf_nat_setnat64plen(nt1, plen);
+		}
+		if (nt2){
+			npf_nat_setnat64plrn(nt2, plen);
+		}
 	default:
 		/*
 		 * Set the algorithm.
