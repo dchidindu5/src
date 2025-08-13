@@ -463,6 +463,7 @@ npf_mk_singlenat(npf_t *npf, const nvlist_t *nat, nvlist_t *resp,
 	}
 
 	/* Allocate a new NAT policy and assign it to the rule. */
+	//the type of nat policy you're using
 	np = npf_natpolicy_create(npf, nat, ntset);
 	if (np == NULL) {
 		NPF_ERR_DEBUG(resp);

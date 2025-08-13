@@ -797,14 +797,17 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	struct ip *ip4;
 	struct ip6_hdr *ip6;
 	size_t hlen;
+	npf_addr_t ipv4addr;
 
+	//  cache layer3 info such as IP address.
+	KASSERT(npf_iscached(npc, NPC_IP46));
+	//cache layer4 info udp/tcp
 	KASSERT(npf_iscached(npc, NPC_LAYER4));
 	KASSERT(which == NPF_SRC || which == NPF_DST);
 
 	// Determine address
 	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_ips[NPF_SRC];
 	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_ips[NPF_DST];
-//  add npc layer3
 	// remove the existing IP header
 	m_adj(m, npc->npc_hlen);
 
@@ -832,9 +835,24 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 
 	switch (npc->npc_info) {
 	case NPC_IP6: {
+		//npf_addr_t ipv4addr;
 		/* IPv6 -> IPv4 */
 		const struct ip6_hdr *oip6 = npc->npc_ip.v6;
+		
+	/*
+	mtod = “mbuf to data” macro.
+	It takes the mbuf (m) and casts the start of 
+	its data region to the type we specify — here, struct ip *.
+	Purpose: We’re telling the kernel: 
+	“The first bytes of the mbuf now hold an IPv4 header.”
+	*/
 		ip4 = mtod(m, struct ip *);
+	
+	/*
+	Clears the IPv4 header memory.
+	Purpose: Avoids leftover garbage values before 
+	we start setting fields.
+	*/
 		memset(ip4, 0, sizeof(struct ip));
 
 		ip4->ip_v     = IPVERSION;
@@ -846,10 +864,21 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		ip4->ip_ttl   = oip6->ip6_hlim;
 		ip4->ip_p     = npc->npc_next_proto;
 		// router's public ipv4, set on the npf rule.
-		ip4->ip_src.s_addr = src->s6_addr32[0];
+		/*
+		In NAT64, an IPv4 address is only 32 bits (4 bytes).
+		If that IPv4 is stored in an npf_addr_t, it’s typically placed in the first 4 bytes of the 16-byte union.
+		That means: .word32[0] is used when the address is just a plain IPv4 (first 4 bytes).
+		*/
+		//ip4->ip_src.s_addr = src->s6_addr32[0];
+		 ip4->ip_src.s_addr = np->n_taddr.word32[0];
 		// ipv4 extracted from the ipv6 address
 		// that we got from our DNS
-		ip4->ip_dst.s_addr = dst->s6_addr32[0];
+		//ip4->ip_dst.s_addr = dst->s6_addr32[0];
+
+		/* Destination IPv4: extract from IPv6 using SIIT */
+    	//from cache utility
+		npf_siit64_rwr(npc, NPF_DST, pref, len, &ipv4addr);
+    	ip4->ip_dst.s_addr = ipv4addr.word32[0];
 		break;
 
 	case NPC_IP4:
@@ -917,7 +946,6 @@ npf_npt66_rwr(
 	const npf_addr_t *pref,
     npf_netmask_t len,
 	uint16_t adj)
-
 
 {
 	npf_addr_t *addr = npc->npc_ips[which];
@@ -1059,7 +1087,7 @@ npf_siit64_rwr(const npf_cache_t *npc, u_int which,
 // IGNORE PLEASE
 // Handles only /96 logic
 // incomplete logic
-int npf_siit64_rwr(
+/*int npf_siit64_rwr(
     const npf_cache_t *npc,          // Parsed packet metadata (headers, addresses)
     u_int which,                     // Either NPF_SRC or NPF_DST — tells us which IP to translate
     //const npf_addr_t *ipv6addr,        // The full IPv6 address to be translated
@@ -1116,7 +1144,7 @@ int npf_siit64_rwr(
 
     return 0;
 }
-
+*/
 
 #if defined(DDB) || defined(_NPF_TESTING)
 

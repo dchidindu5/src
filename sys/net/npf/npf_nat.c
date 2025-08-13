@@ -213,10 +213,12 @@ npf_natpolicy_create(npf_t *npf, const nvlist_t *nat, npf_ruleset_t *rset)
 		np->n_tmask = NPF_NO_NETMASK;
 		np->n_flags |= NPF_NAT_USETABLE;
 	} else {
+		//
 		addr = dnvlist_get_binary(nat, "nat-addr", &len, NULL, 0);
 		if (!addr || len == 0 || len > sizeof(npf_addr_t)) {
 			goto err;
 		}
+		// copy addr(source) to n_taddr(destination) and then the size
 		memcpy(&np->n_taddr, addr, len);
 		np->n_alen = len;
 		np->n_tmask = dnvlist_get_number(nat, "nat-mask", NPF_NO_NETMASK);
@@ -647,10 +649,12 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 		    np->n_tmask, np->n_npt66_adj);
 	//case NPF_ALGO_SIIT64:
 	case NPF_ALGO_NAT64:
-		npf_siit64_rwr(npc, which, &np->n_taddr,
+		return npf_nat64_rwrheader(npc, &npc->npc_nbuf, 
+				&np->n_taddr, which);
+		/*npf_siit64_rwr(npc, which, &np->n_taddr,
 			np->n_tmask, &ipv4addr);
 		taddr = &ipv4addr;
-		break;
+		break;*/
 
 		/*npf_addr_t v4addr;
 		int just_return = npf_siit64_rwr(npc, which, &np->n_taddr, np->n_tmask, &v4addr);

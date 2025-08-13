@@ -1019,6 +1019,8 @@ int
 npf_nat_setaddr(nl_nat_t *nt, int af, npf_addr_t *addr, npf_netmask_t mask)
 {
 	/* Translation IP and mask. */
+	//address that needs to be changed
+	//Key: nat-addr
 	if (!_npf_add_addr(nt->rule_dict, "nat-addr", af, addr)) {
 		return nvlist_error(nt->rule_dict);
 	}
