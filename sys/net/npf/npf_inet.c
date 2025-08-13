@@ -788,6 +788,88 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 	return true;
 }
 
+int
+npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
+	const npf_addr_t *addr, u_int which)
+{
+	mbuf *m = nbuf_head_mbuf(npc->npc_nbuf);
+	struct ip *ip4;
+	struct ip6_hdr *ip6;
+	size_t hlen;
+	npf_addr_t ipv4addr;
+
+	// cache layer3 info such as IP address.
+	KASSERT(npf_iscached(npc, NPC_IP46));
+	//cache layer4 info udp/tcp
+	KASSERT(npf_iscached(npc, NPC_LAYER4));
+	KASSERT(which == NPF_SRC || which == NPF_DST);
+
+	// Determine address
+	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_ips[NPF_SRC];
+	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_ips[NPF_DST];
+	// remove the existing IP header
+	m_adj(m, npc->npc_hlen);
+
+	switch (npc->npc_info) {
+	case NPC_IP6:
+		hlen = sizeof(struct ip);
+		break;
+	case NPC_IP4:
+		hlen = sizeof(struct ip6_hdr);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	m = m_prepend(m, hlen, M_DONTWAIT);
+	if (m == NULL) {
+		return ENOMEM;
+	}
+	*nbuf = m;
+
+	switch (npc->npc_info) {
+	case NPC_IP6: {
+		//npf_addr_t ipv4addr;
+		/* IPv6 -> IPv4 */
+		const struct ip6_hdr *oip6 = npc->npc_ip.v6;
+		
+		ip4 = mtod(m, struct ip *);
+	
+		memset(ip4, 0, sizeof(struct ip));
+
+		ip4->ip_v     = IPVERSION;
+		ip4->ip_hl    = sizeof(struct ip) >> 2;
+		ip4->ip_tos   = 0;
+		ip4->ip_len   = htons(hlen + ntohs(oip6->ip6_plen));
+		ip4->ip_id    = htons(0);
+		ip4->ip_off   = htons(IP_DF);
+		ip4->ip_ttl   = oip6->ip6_hlim;
+		ip4->ip_p     = npc->npc_next_proto;
+		// router's public ipv4, set on the npf rule.
+		/*
+		In NAT64, an IPv4 address is only 32 bits (4 bytes).
+		If that IPv4 is stored in an npf_addr_t, it’s typically placed in the first 4 bytes of the 16-byte union.
+		That means: .word32[0] is used when the address is just a plain IPv4 (first 4 bytes).
+		*/
+		ip4->ip_src.s_addr = np->n_taddr.word32[0];
+	
+		/* Destination IPv4: extract from IPv6 using SIIT */
+    	//from cache utility
+		npf_siit64_rwr(npc, NPF_DST, pref, len, &ipv4addr);
+    	ip4->ip_dst.s_addr = ipv4addr.word32[0];
+		break;
+
+	case NPC_IP4:
+		// logic for nat ip4 -> ip6 goes here
+		break;
+	}
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
+
 /*
  * npf_napt_rwr: perform address and/or port translation.
  */

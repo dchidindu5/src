@@ -634,11 +634,15 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	case NPF_ALGO_NPT66:
 		return npf_npt66_rwr(npc, which, &np->n_taddr,
 		    np->n_tmask, np->n_npt66_adj);
+	case NPF_ALGO_NAT64:
+		return npf_nat64_rwrheader(npc, &npc->npc_nbuf, 
+				&np->n_taddr, which);
 	default:
 		taddr = &np->n_taddr;
 		break;
 	}
 	return npf_napt_rwr(npc, which, taddr, np->n_tport);
+	// I think npf_nat64_rwrheader should also be returned here too;
 }
 
 /*
