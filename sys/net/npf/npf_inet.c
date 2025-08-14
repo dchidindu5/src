@@ -855,7 +855,7 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	
 		/* Destination IPv4: extract from IPv6 using SIIT */
     	//from cache utility
-		npf_siit64_rwr(npc, NPF_DST, pref, len, &ipv4addr);
+		npf_extract_ipv4(npc, NPF_DST, pref, len, &ipv4addr);
     	ip4->ip_dst.s_addr = ipv4addr.word32[0];
 		break;
 
@@ -984,6 +984,77 @@ npf_npt66_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
 	}
 	addr->word16[word] = sum;
 	return 0;
+}
+
+/*
+ * IPv6-to-IPv4 Network Prefix Translation (NAT64), as per RFC 6052.
+ * Stateless Translation (SIIT)
+ */
+
+ /*
+GOAL 1: EXTRACT THE EMBEDDED IPV4 FROM THE IPV6
+ */
+//there is need for refactoring
+int
+npf_extract_ipv4(const npf_cache_t *npc, u_int which,
+    const npf_addr_t *pref, npf_netmask_t len,
+    npf_addr_t *result_ipv4addr)
+{
+    npf_addr_t *ipv6_dest;
+    uint8_t temp[16];        // Temporary buffer for modified IPv6
+    uint8_t *adjusted;
+    npf_addr_t new_ipv4;
+    unsigned offset;
+
+    KASSERT(which == NPF_SRC || which == NPF_DST);
+
+    if (!npf_iscached(npc, NPC_IP6)) {
+        return EINVAL;
+    }
+
+   ipv6_dest = npc->npc_ips[NPF_DST];
+
+    memset(&new_ipv4, 0, sizeof(npf_addr_t));
+    memset(temp, 0, sizeof(temp));
+
+    // Must be byte-aligned and <= 96
+    if (len % 8 != 0 || len > 96) {
+        return EINVAL;
+    }
+
+    offset = len / 8;
+    adjusted = temp;
+
+    switch (len) {
+    case 96:
+        // Standard NAT64 case: last 4 bytes are the IPv4
+        memcpy(&new_ipv4, ((const uint8_t)ipv6_dest) + 12, 4);
+        break;
+
+    case 32:
+    case 40:
+    case 48:
+    case 56:
+    case 64:
+        // Step 1: copy original IPv6 to temp variable
+        memcpy(temp, ipv6_dest, 16);
+
+        // Step 2: remove the 'u' byte at index 8
+		//by shifting bytes 9–15 left
+		// according to RFC 6052
+        memmove(&temp[8], &temp[9], 7);  // Now 15-byte adjusted address
+
+        // Step 3: extract 4 bytes from new offset
+		adjusted = temp;
+        memcpy(&new_ipv4, adjusted + offset, 4);
+        break;
+
+    default:
+        return EINVAL;
+    }
+
+    *result_ipv4addr = new_ipv4;
+    return 0;
 }
 
 #if defined(DDB) || defined(_NPF_TESTING)
