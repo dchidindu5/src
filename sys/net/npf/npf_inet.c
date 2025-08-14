@@ -877,7 +877,7 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 
 		/* Destination IPv4: extract from IPv6 using SIIT */
     	//from cache utility
-		npf_siit64_rwr(npc, NPF_DST, pref, len, &ipv4addr);
+		npf_extract_ipv4(npc, NPF_DST, pref, len, &ipv4addr);
     	ip4->ip_dst.s_addr = ipv4addr.word32[0];
 		break;
 
@@ -1023,7 +1023,7 @@ GOAL 1: EXTRACT THE EMBEDDED IPV4 FROM THE IPV6
  */
 //COMPLETE LOGIC
 int
-npf_siit64_rwr(const npf_cache_t *npc, u_int which,
+npf_extract_ipv4(const npf_cache_t *npc, u_int which,
     const npf_addr_t *pref, npf_netmask_t len,
     npf_addr_t *result_ipv4addr)
 {
