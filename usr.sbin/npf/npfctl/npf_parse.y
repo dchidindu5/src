@@ -404,10 +404,16 @@ map_algo
 	| ALGO NAT64		{ $$ = NPF_ALGO_NAT64; }
 	|			{ $$ = 0; }
 	;
+//$1 is NAT64_PLEN
+//$2 is number
+//$n = nth symbol on the RHS of the current grammar rule.
+
+//In your plen rule, number is the second symbol,
+//so you must use $2.
 plen
-	: NAAT64_PLEN number
-	|		{ $$ = 2; }
-	;
+    : NAT64_PLEN number   { $$ = $2; }
+    |                     { $$ = 96; }
+    ;
 
 map_flags
 	: NO_PORTS	{ $$ = NPF_NAT_PORTS; }
@@ -436,11 +442,11 @@ map
 	}
 	| MAP ifref map_sd map_algo map_flags mapseg map_type mapseg
 	{
-		npfctl_build_natseg($3, $8, $6, $2, &$7, &$9, NULL, NULL, $4, $5);
+		npfctl_build_natseg($3, $7, $5, $2, &$6, &$8, NULL, NULL, $4, 0);
 	}
 	| MAP ifref map_sd map_algo map_flags proto mapseg map_type mapseg
 	{
-		npfctl_build_natseg($3, $9, $6, $2, &$8, &$10, $7, NULL, $4, $5);
+		npfctl_build_natseg($3, $8, $5, $2, &$7, &$9, $6, NULL, $4, 0);
 	}
 	| MAP RULESET group_opts
 	{

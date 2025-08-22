@@ -111,7 +111,7 @@ struct npf_natpolicy {
 
 	unsigned		n_algo;
 	union {
-		unsigned    nat64_plen;
+		uint8_t    n_nat64_plen;
 		unsigned	n_rr_idx;
 		uint16_t	n_npt66_adj;
 	};
@@ -209,6 +209,7 @@ npf_natpolicy_create(npf_t *npf, const nvlist_t *nat, npf_ruleset_t *rset)
 		if (np->n_flags & NPF_NAT_STATIC) {
 			goto err;
 		}
+		// point of entry
 		np->n_tid = nvlist_get_number(nat, "nat-table-id");
 		np->n_tmask = NPF_NO_NETMASK;
 		np->n_flags |= NPF_NAT_USETABLE;
@@ -240,8 +241,9 @@ npf_natpolicy_create(npf_t *npf, const nvlist_t *nat, npf_ruleset_t *rset)
 		break;
 	// I THINK THIS SHOULD BE HERE!!
 	case NPF_ALGO_NAT64:
-	/*maybe i could write a logic to  
+	/*maybe i could write a logic to
 	verify the address length or something like that*/
+	// this is where it get to the kernel
 		np->nat64_plen = dnvlist_get_number(nat, "nat64-plen", 0);
 		break;
 	case NPF_ALGO_IPHASH:
@@ -635,7 +637,7 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	const unsigned which = npf_nat_which(np->n_type, flow);
 	const npf_addr_t *taddr;
 	npf_addr_t addr;
-	npf_addr_t ipv4addr;
+	//npf_addr_t ipv4addr;
 
 	KASSERT(np->n_flags & NPF_NAT_STATIC);
 
@@ -649,7 +651,7 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 		    np->n_tmask, np->n_npt66_adj);
 	//case NPF_ALGO_SIIT64:
 	case NPF_ALGO_NAT64:
-		return npf_nat64_rwrheader(npc, &npc->npc_nbuf, 
+		return npf_nat64_rwrheader(npc, &npc->npc_nbuf,
 				&np->n_taddr, which);
 		/*npf_siit64_rwr(npc, which, &np->n_taddr,
 			np->n_tmask, &ipv4addr);

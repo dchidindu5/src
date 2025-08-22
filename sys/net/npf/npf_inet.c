@@ -838,19 +838,17 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		//npf_addr_t ipv4addr;
 		/* IPv6 -> IPv4 */
 		const struct ip6_hdr *oip6 = npc->npc_ip.v6;
-		
 	/*
 	mtod = “mbuf to data” macro.
-	It takes the mbuf (m) and casts the start of 
+	It takes the mbuf (m) and casts the start of
 	its data region to the type we specify — here, struct ip *.
-	Purpose: We’re telling the kernel: 
+	Purpose: We’re telling the kernel:
 	“The first bytes of the mbuf now hold an IPv4 header.”
 	*/
 		ip4 = mtod(m, struct ip *);
-	
 	/*
 	Clears the IPv4 header memory.
-	Purpose: Avoids leftover garbage values before 
+	Purpose: Avoids leftover garbage values before
 	we start setting fields.
 	*/
 		memset(ip4, 0, sizeof(struct ip));
@@ -873,16 +871,27 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		 ip4->ip_src.s_addr = np->n_taddr.word32[0];
 		// ipv4 extracted from the ipv6 address
 		// that we got from our DNS
-		//ip4->ip_dst.s_addr = dst->s6_addr32[0];
 
 		/* Destination IPv4: extract from IPv6 using SIIT */
     	//from cache utility
-		npf_extract_ipv4(npc, NPF_DST, pref, len, &ipv4addr);
+		npf_extract_ipv4(npc, NPF_DST, pref, np->n_nat64_len, &ipv4addr);
     	ip4->ip_dst.s_addr = ipv4addr.word32[0];
 		break;
 
 	case NPC_IP4:
 		// logic for nat ip4 -> ip6 goes here
+		const struct ip4_hdr *oip4 = npc->npc_ip.v4;
+		ip6 = mtod(m, struct ip6_hdr *);
+        memset(ip6, 0, sizeof(struct ip6_hdr));
+
+		ip6->ip6_vfc  = IPV6_VERSION;
+		ip6->ip6_flow =
+		ip6->ip6_plen = htons(ntohs(oip4->ip_len) - (oip4->ip_hl << 2)); //payload length
+        ip6->ip6_nxt  = oip4->ip_p;
+        ip6->ip6_hlim = oip4->ip_ttl;
+
+		// ipv6 host
+		ip6->ip6_dst = npc->npc_ips[NPF_SRC]->in6;
 		break;
 	}
 	default:
@@ -1021,8 +1030,70 @@ npf_npt66_rwr(
  /*
 GOAL 1: EXTRACT THE EMBEDDED IPV4 FROM THE IPV6
  */
-//COMPLETE LOGIC
 int
+npf_extract_ipv4(
+	const npf_cache_t *npc, u_int which,
+    const npf_addr_t *pref, uint8_t plen,
+    npf_addr_t *result_ipv4addr)
+{
+    const npf_addr_t *ipv6_dest;
+    uint8_t temp[16];            // Temporary buffer for adjusted address
+    uint8_t *adjusted;
+    npf_addr_t new_ipv4;
+    unsigned offset;
+
+    KASSERT(which == NPF_SRC || which == NPF_DST);
+
+    if (!npf_iscached(npc, NPC_IP6)) {
+        return EINVAL;
+    }
+
+    ipv6_dest = npc->npc_ips[NPF_DST];
+    memset(&new_ipv4, 0, sizeof(npf_addr_t));
+    memset(temp, 0, sizeof(temp));
+
+    switch (plen) {
+    case 32: offset = 4; break;
+    case 40: offset = 5; break;
+    case 48: offset = 6; break;
+    case 56: offset = 7; break;
+    case 64: offset = 8; break;
+
+    default:
+        // consider any other valid length as /96 by default
+        if (plen != 96) {
+            return EINVAL;
+        }
+        offset = 12;
+        break;
+    }
+
+    if (plen == 96) {
+        // No shifting needed, IPv4 in last 4 bytes
+        memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, 4);
+    } else {
+        // Step 1: Copy the IPv6 address to a temp buffer
+        memcpy(temp, ipv6_dest, 16);
+
+        // Step 2: Remove 'u' byte at byte 8 (shift bytes 9–15 left)
+		// according to rfc 6045
+        memmove(&temp[8], &temp[9], 7);  // Now temp is 15 bytes
+
+        // Step 3: Extract 4 bytes at offset
+        adjusted = temp;
+        memcpy(&new_ipv4, adjusted + offset, 4);
+    }
+
+    *result_ipv4addr = new_ipv4;
+    return 0;
+}
+
+
+
+
+
+//COMPLETE LOGIC
+/*int
 npf_extract_ipv4(const npf_cache_t *npc, u_int which,
     const npf_addr_t *pref, npf_netmask_t len,
     npf_addr_t *result_ipv4addr)
@@ -1082,7 +1153,7 @@ npf_extract_ipv4(const npf_cache_t *npc, u_int which,
 
     *result_ipv4addr = new_ipv4;
     return 0;
-}
+}*/
 
 // IGNORE PLEASE
 // Handles only /96 logic

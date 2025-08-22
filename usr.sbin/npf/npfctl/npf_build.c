@@ -908,14 +908,20 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 				We're checking which one is the IPv6 address to extract its fam_mask (prefix length).
 				Then we check if it's a valid value 
 				and throw an error otherwise.*/
-			const npf_netmask_t plen = (am1->fam_family == AF_INET6)
-				? am1->fam_mask : am2->fam_mask;
+			switch (plen) {
+			case 32:
+			case 40:
+			case 48:
+			case 56:
+			case 64:
+    		/* keep plen as-is */
+    		break;
 
-				if (plen != 32 && plen != 40 && plen != 48 &&
-	    		plen != 56 && plen != 64 && plen != 96) {
-				yyerror("invalid NAT64 prefix length");
-			}
-			break;
+			default:
+    		/* everything else becomes 96 */
+    		plen = 96;
+   			break; }
+
 
 		case NPF_ALGO_NONE:
 			if ((am1 && am1->fam_mask != NPF_NO_NETMASK) ||
@@ -976,6 +982,8 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 		break;
 	case NPF_ALGO_NAT64:
 		if (nt1){
+			//Add new case fpr nat64
+			//basically setting prefix length
 			npf_nat_setnat64plen(nt1, plen);
 		}
 		if (nt2){
@@ -1148,3 +1156,12 @@ npfctl_dump_bpf(struct bpf_program *bf)
 		bpf_dump(bf, 0);
 	}
 }
+/*
+
+		if (plen != 32 && plen != 40 && plen != 48 &&
+	    plen != 56 && plen != 64 && plen != 96) {
+		yyerror("invalid NAT64 prefix length");
+		}
+		break;
+
+*/

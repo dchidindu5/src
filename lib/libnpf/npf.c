@@ -1066,7 +1066,7 @@ npf_nat_setnpt66(nl_nat_t *nt, uint16_t adj)
 }
 
 int
-npf_nat_setnat64plen(nl_nat_t *nt, unsigned plen)
+npf_nat_setnat64plen(nl_nat_t *nt, uint8_t plen)
 {
 	int error;
 
