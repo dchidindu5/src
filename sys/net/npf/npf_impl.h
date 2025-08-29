@@ -350,7 +350,7 @@ int		npf_npt66_rwr(const npf_cache_t *, u_int, const npf_addr_t *,
 		    npf_netmask_t, uint16_t);
 
 int		npf_extract_ipv4(const npf_cache_t *, u_int, const npf_addr_t *,
-	 		npf_netmask_t, npf_addr_t *);
+	 		uint8_t, npf_addr_t *);
 int		npf_embed_ipv4(const npf_cache_t *, u_int , const npf_addr_t *,
      uint8_t , npf_addr_t *);
 {

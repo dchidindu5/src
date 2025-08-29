@@ -797,7 +797,7 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	struct ip *ip4;
 	struct ip6_hdr *ip6;
 	size_t hlen;
-	npf_addr_t ipv4addr;
+	npf_addr_t ipv4addr, ipv6addr;
 
 	//  cache layer3 info such as IP address.
 	KASSERT(npf_iscached(npc, NPC_IP46));
@@ -872,8 +872,9 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		// ipv4 extracted from the ipv6 address
 		// that we got from our DNS
 
-		/* Destination IPv4: extract from IPv6 using SIIT */
-    	//from cache utility
+		/* Destination IPv4: extract from IPv6 using SIIT 
+    	from cache utility
+		*/
 		npf_extract_ipv4(npc, NPF_DST, pref, np->n_nat64_len, &ipv4addr);
     	ip4->ip_dst.s_addr = ipv4addr.word32[0];
 		break;
@@ -885,14 +886,20 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
         memset(ip6, 0, sizeof(struct ip6_hdr));
 
 		ip6->ip6_vfc  = IPV6_VERSION;
-		//Flow Label:  0 (all zero bits)
+		/*Flow Label:  0 (all zero bits) */
 		ip6->ip6_flow = 0;
-		ip6->ip6_plen = htons(ntohs(oip4->ip_len) - (oip4->ip_hl << 2)); //payload length Total length value from the IPv4 header, minus the size of the IPv4 header and IPv4 options
+		/* payload length, Total length value from the IPv4 header, 
+		* minus the size of the IPv4 header and IPv4 options
+		*/
+		ip6->ip6_plen = htons(ntohs(oip4->ip_len) - (oip4->ip_hl << 2));
         ip6->ip6_nxt  = oip4->ip_p; // protocol field MUST be copied from the IPv4 header
-        ip6->ip6_hlim = oip4->ip_ttl; //hop limit like TTL time to live
+		ip6->ip6_hlim = (oip4->ip_ttl < IPV6_DEFHLIM) ? oip4->ip_ttl : IPV6_DEFHLIM;
+        //ip6->ip6_hlim = oip4->ip_ttl; //hop limit like TTL time to live
 
 		// ipv6 host
 		ip6->ip6_dst = npc->npc_ips[NPF_SRC]->in6;
+		npf_embed_ipv4(npc, NPF_SRC, pref, np->n_nat64_len, &ipv6addr)
+		ip6->ip6_src = ipv6addr;
 		break;
 	}
 	default:
@@ -1126,7 +1133,7 @@ npf_embed_ipv4(
 	if (plen == 96) {
         
 		/*Copy the nat64 ipv6 without an ipv4 TO result_ipv6 i.e the first 12 bytes*/
-        memcpy(result_ipv6addr, prefix, 12);
+        memcpy(result_ipv6addr, pref, 12);
 		/*copy the source ipv4 (4bytes remaining) 
 		into the result_ipv6addr
 		holding the first 12 bytes already*/
@@ -1138,7 +1145,7 @@ npf_embed_ipv4(
       least significant octet to be excluded */
 	else{
 		 /* copy prefix plen is byte aligned here) */
-        memcpy(temp, prefix, plen / 8);
+        memcpy(temp, pref, plen / 8);
 
         /* make space for the 'u' byte at index 8 by shifting bytes 8..14 right */
         memmove(&temp[9], &temp[8], 7); /* move bytes 8..14 -> 9..15 */
@@ -1150,7 +1157,7 @@ npf_embed_ipv4(
         memcpy(temp + offset, &ip_src->s_addr, sizeof(struct in_addr));
 
         
-        memcpy(result_ipv6, temp, sizeof(struct in6_addr));
+        memcpy(result_ipv6addr, temp, sizeof(struct in6_addr));
 	}
 
 
