@@ -353,7 +353,6 @@ int		npf_extract_ipv4(const npf_cache_t *, u_int, const npf_addr_t *,
 	 		uint8_t, npf_addr_t *);
 int		npf_embed_ipv4(const npf_cache_t *, u_int , const npf_addr_t *,
      uint8_t , npf_addr_t *);
-{
 
 uint16_t	npf_fixup16_cksum(uint16_t, uint16_t, uint16_t);
 uint16_t	npf_fixup32_cksum(uint16_t, uint32_t, uint32_t);
