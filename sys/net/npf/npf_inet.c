@@ -885,10 +885,11 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
         memset(ip6, 0, sizeof(struct ip6_hdr));
 
 		ip6->ip6_vfc  = IPV6_VERSION;
-		ip6->ip6_flow =
-		ip6->ip6_plen = htons(ntohs(oip4->ip_len) - (oip4->ip_hl << 2)); //payload length
-        ip6->ip6_nxt  = oip4->ip_p;
-        ip6->ip6_hlim = oip4->ip_ttl;
+		//Flow Label:  0 (all zero bits)
+		ip6->ip6_flow = 0;
+		ip6->ip6_plen = htons(ntohs(oip4->ip_len) - (oip4->ip_hl << 2)); //payload length Total length value from the IPv4 header, minus the size of the IPv4 header and IPv4 options
+        ip6->ip6_nxt  = oip4->ip_p; // protocol field MUST be copied from the IPv4 header
+        ip6->ip6_hlim = oip4->ip_ttl; //hop limit like TTL time to live
 
 		// ipv6 host
 		ip6->ip6_dst = npc->npc_ips[NPF_SRC]->in6;
@@ -1070,26 +1071,87 @@ npf_extract_ipv4(
 
     if (plen == 96) {
         // No shifting needed, IPv4 in last 4 bytes
-        memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, 4);
+        memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, sizeof(struct in_addr));
     } else {
-        // Step 1: Copy the IPv6 address to a temp buffer
-        memcpy(temp, ipv6_dest, 16);
+        /* Copy the IPv6 address to a temp buffer */
+        memcpy(temp, ipv6_dest, sizeof(struct in6_addr));
 
-        // Step 2: Remove 'u' byte at byte 8 (shift bytes 9–15 left)
-		// according to rfc 6045
+        /* Remove 'u' byte at byte 8 (shift bytes 9–15 left)
+		according to rfc 6052, section 2.3 
+		*/
         memmove(&temp[8], &temp[9], 7);  // Now temp is 15 bytes
 
-        // Step 3: Extract 4 bytes at offset
+        /* Extract 4 bytes at offset */
         adjusted = temp;
-        memcpy(&new_ipv4, adjusted + offset, 4);
+        memcpy(&new_ipv4, adjusted + offset, sizeof(struct in_addr));
     }
 
     *result_ipv4addr = new_ipv4;
     return 0;
 }
 
+/*under construction*/
+int
+npf_embed_ipv4(
+	const npf_cache_t *npc, u_int which, const npf_addr_t *pref
+     uint8_t plen, npf_addr_t *result_ipv6addr)
+{
+    const npf_addr_t *ip_src;
+    uint8_t temp[16];            // Temporary buffer for adjusted address
+    unsigned offset;
+// pref == ip_src
+	KASSERT(which == NPF_SRC || which == NPF_DST);
 
+    if (!npf_iscached(npc, NPC_IP46)) {
+        return EINVAL;
+    }
 
+	ip_src = npc->npc_ips[NPF_SRC];
+	memset(result_ipv6addr, 0, sizeof(npf_addr_t));
+    memset(temp, 0, sizeof(temp));
+
+	/* Compute offset according to RFC 6052 */
+    switch (plen) {
+    case 32: offset = 4; break;
+    case 40: offset = 5; break;
+    case 48: offset = 6; break;
+    case 56: offset = 7; break;
+    case 64: offset = 8; break;
+    case 96: offset = 12; break;
+    /*I should make 96 the default case*/
+	default:
+        return EINVAL;
+    }
+	// I think prefix(ipv4) should come from the extracted ipv4 in the cache
+	if (plen == 96) {
+        
+		/*Copy the nat64 ipv6 without an ipv4 TO result_ipv6 i.e the first 12 bytes*/
+        memcpy(result_ipv6addr, prefix, 12);
+		/*copy the source ipv4 (4bytes remaining) 
+		into the result_ipv6addr
+		holding the first 12 bytes already*/
+        memcpy(((uint8_t *)result_ipv6addr) + offset,
+               &ip_src->s_addr, sizeof(struct in_addr));
+    }
+	/*If the prefix length is less than 96 bits, insert the null octet
+      "u" at the appropriate position (bits 64 to 71), thus causing the
+      least significant octet to be excluded */
+	else{
+		 /* copy prefix plen is byte aligned here) */
+        memcpy(temp, prefix, plen / 8);
+
+        /* make space for the 'u' byte at index 8 by shifting bytes 8..14 right */
+        memmove(&temp[9], &temp[8], 7); /* move bytes 8..14 -> 9..15 */
+
+        /* set the reserved 'u' byte to zero */
+        temp[8] = 0x00;
+
+        /* place the 4 IPv4 bytes at the calculated offset */
+        memcpy(temp + offset, &ip_src->s_addr, sizeof(struct in_addr));
+
+        
+        memcpy(result_ipv6, temp, sizeof(struct in6_addr));
+	}
 
 
 //COMPLETE LOGIC
