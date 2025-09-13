@@ -404,12 +404,7 @@ map_algo
 	| ALGO NAT64		{ $$ = NPF_ALGO_NAT64; }
 	|			{ $$ = 0; }
 	;
-//$1 is NAT64_PLEN
-//$2 is number
-//$n = nth symbol on the RHS of the current grammar rule.
 
-//In your plen rule, number is the second symbol,
-//so you must use $2.
 plen
     : NAT64_PLEN number   { $$ = $2; }
     |                     { $$ = 96; }

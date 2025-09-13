@@ -937,6 +937,12 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 	default:
 		abort();
 	}
+	/*$1 is NAT64_PLEN
+	$2 is number
+	$n = nth symbol on the RHS of the current grammar rule.
+	In your plen rule, number is the second symbol,
+	so you must use $2.
+	*/
 
 	/*
 	 * Apply the flag modifications.

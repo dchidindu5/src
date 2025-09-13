@@ -244,7 +244,7 @@ npf_natpolicy_create(npf_t *npf, const nvlist_t *nat, npf_ruleset_t *rset)
 	/*maybe i could write a logic to
 	verify the address length or something like that*/
 	// this is where it get to the kernel
-		np->nat64_plen = dnvlist_get_number(nat, "nat64-plen", 0);
+		np->n_nat64_plen = dnvlist_get_number(nat, "nat64-plen", 0);
 		break;
 	case NPF_ALGO_IPHASH:
 	case NPF_ALGO_RR:
@@ -652,7 +652,7 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	//case NPF_ALGO_SIIT64:
 	case NPF_ALGO_NAT64:
 		return npf_nat64_rwrheader(npc, &npc->npc_nbuf,
-				&np->n_taddr, which);
+				&np->n_taddr, which, np->n_nat64_plen);
 		/*npf_siit64_rwr(npc, which, &np->n_taddr,
 			np->n_tmask, &ipv4addr);
 		taddr = &ipv4addr;

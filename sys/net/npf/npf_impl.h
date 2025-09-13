@@ -348,12 +348,12 @@ int		npf_napt_rwr(const npf_cache_t *, u_int, const npf_addr_t *,
 		    const in_addr_t);
 int		npf_npt66_rwr(const npf_cache_t *, u_int, const npf_addr_t *,
 		    npf_netmask_t, uint16_t);
-
+int 	npf_nat64_rwrheader(npf_cache_t *, nbuf_t **, const npf_addr_t *,
+		u_int, const npf_addr_t *, uint8_t);
 int		npf_extract_ipv4(const npf_cache_t *, u_int, const npf_addr_t *,
 	 		uint8_t, npf_addr_t *);
 int		npf_embed_ipv4(const npf_cache_t *, u_int , const npf_addr_t *,
-     uint8_t , npf_addr_t *);
-
+    	 	uint8_t, npf_addr_t *);
 uint16_t	npf_fixup16_cksum(uint16_t, uint16_t, uint16_t);
 uint16_t	npf_fixup32_cksum(uint16_t, uint32_t, uint32_t);
 uint16_t	npf_addr_cksum(uint16_t, int, const npf_addr_t *,
@@ -503,7 +503,6 @@ uint64_t	npf_nat_getid(const npf_natpolicy_t *);
 void		npf_nat_freealg(npf_natpolicy_t *, npf_alg_t *);
 
 int		npf_do_nat(npf_cache_t *, npf_conn_t *, const unsigned);
-int 	npf_nat64_rwrheader(npf_cache_t *, nbuf_t **, const npf_addr_t *, u_int);
 npf_nat_t *	npf_nat_share_policy(npf_cache_t *, npf_conn_t *, npf_nat_t *);
 void		npf_nat_destroy(npf_conn_t *, npf_nat_t *);
 void		npf_nat_getorig(npf_nat_t *, npf_addr_t **, in_port_t *);
