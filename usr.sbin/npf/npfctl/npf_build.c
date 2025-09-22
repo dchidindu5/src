@@ -993,7 +993,7 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 			npf_nat_setnat64plen(nt1, plen);
 		}
 		if (nt2){
-			npf_nat_setnat64plrn(nt2, plen);
+			npf_nat_setnat64plen(nt2, plen);
 		}
 	default:
 		/*
