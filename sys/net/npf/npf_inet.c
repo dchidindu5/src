@@ -732,12 +732,13 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 	struct tcphdr *th;
 	struct udphdr *uh;
 	in_port_t oport;
-
+	/*The packet must already be parsed to L4
+	(so npc->npc_l4.tcp or npc->npc_l4.udp is valid).*/
 	KASSERT(npf_iscached(npc, NPC_LAYER4));
 	KASSERT(which == NPF_SRC || which == NPF_DST);
-
+	/*If the packet is IPv4, update the IPv4 header checksum
+	incrementally.*/
 	if (npf_iscached(npc, NPC_IP4)) {
-		// thinking aloud
 		struct ip *ip = npc->npc_ip.v4;
 		uint16_t ipsum = ip->ip_sum;
 
@@ -791,9 +792,9 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 
 int
 npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
-	const npf_addr_t *addr, u_int which,
-	const npf_addr_t *pref, uint8_t plen)
+	u_int which, const npf_addr_t *pref, uint8_t plen)
 {
+	npf_addr_t *addr = npc->npc_ips[which];
 	struct mbuf *m = nbuf_head_mbuf(npc->npc_nbuf);
 	struct ip *ip = NULL;
 	struct ip6_hdr *ip6 = NULL;
@@ -863,12 +864,16 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 
 		ip->ip_v     = IPVERSION;
 		ip->ip_hl    = sizeof(struct ip) >> 2;
-		ip->ip_tos   = IPTOS_LOWDELAY;
+		// ip->ip_tos   = IPTOS_LOWDELAY;
+		ip->ip_tos = (ntohl(ip6->ip6_flow) >> 20) & 0xff;
 		ip->ip_len   = htons(hlen + ntohs(oip->ip6_plen));
 		ip->ip_id    = htons(0);
 		ip->ip_off   = htons(IP_DF);
 		ip->ip_ttl   = oip->ip6_hlim;
 		ip->ip_p     = npc->npc_proto;
+		ip->ip_sum = 0;
+		ip->ip_sum = in_cksum(m, ip->ip_hl << 2);
+    	//ip->ip_sum = in_cksum((uint16_t *)ip, ip->ip_hl << 2, NULL);
 		// router's public ipv4, set on the npf rule.
 		/*
 		In NAT64, an IPv4 address is only 32 bits (4 bytes).
@@ -886,6 +891,15 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		//const npf_addr_t *pref = &np->n_taddr;
 		npf_extract_ipv4(npc, NPF_DST, pref, plen, &ipv4addr);
     	ip->ip_dst.s_addr = ipv4addr.word32[0];
+
+		/* Fix transport-layer checksum (TCP/UDP) */
+		/*if (!npf_rwrcksum(npc, NPF_SRC, &ip->ip_src, 0)) {
+    		return EINVAL;
+		}
+		if (!npf_rwrcksum(npc, NPF_DST, &ip->ip_dst, 0)) {
+    		return EINVAL;
+		}*/
+
 		break;
 	}
 
@@ -897,7 +911,8 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 
 		ip6->ip6_vfc  = IPV6_VERSION;
 		/*Flow Label:  0 (all zero bits) */
-		ip6->ip6_flow = 0;
+		// ip6->ip6_flow = 0;
+		ip6->ip6_flow = htonl(((ip->ip_tos & 0xff) << 20));
 		/* payload length, Total length value from the IPv4 header, 
 		* minus the size of the IPv4 header and IPv4 options
 		*/
@@ -1120,7 +1135,7 @@ npf_embed_ipv4(
     const npf_addr_t *ip_src;
     uint8_t temp[16];            // Temporary buffer for adjusted address
     unsigned offset;
-// pref == ip_src
+
 	KASSERT(which == NPF_SRC || which == NPF_DST);
 
     if (!npf_iscached(npc, NPC_IP46)) {
@@ -1172,8 +1187,8 @@ npf_embed_ipv4(
 
         memcpy(result_ipv6addr, temp, sizeof(struct in6_addr));
 	}
-
-
+	return 0;
+}
 #if defined(DDB) || defined(_NPF_TESTING)
 
 const char *
