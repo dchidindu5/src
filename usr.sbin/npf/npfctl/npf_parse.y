@@ -190,7 +190,7 @@ yyerror(const char *fmt, ...)
 %type	<num>		port opt_final number afamily opt_family
 %type	<num>		block_or_pass rule_dir group_dir block_opts
 %type	<num>		maybe_not opt_stateful icmp_type table_type
-%type	<num>		map_sd map_algo map_flags map_type
+%type	<num>		map_sd map_algo plen map_flags map_type
 %type	<num>		param_val
 %type	<var>		static_ifaddrs filt_addr_element
 %type	<var>		filt_port filt_port_list port_range icmp_type_and_code
@@ -407,7 +407,7 @@ map_algo
 
 plen
     : NAT64_PLEN number   { $$ = $2; }
-    |                     { $$ = 96; }
+    |       { $$ = 96; }
     ;
 
 map_flags
