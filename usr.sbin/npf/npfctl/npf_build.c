@@ -893,7 +893,7 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 				    "NETMAP algorithm must be 1:1");
 			}
 			break;
-		case NPF_ALGO_NAT64:
+		case NPF_ALGO_NAT64: {
 			/*
 			* NAT64 requires that no two addresses are the same
 			* Must be IPv6, the other IPv4 and vice versa.
@@ -906,7 +906,7 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 				/*am1 and am2 are addresses parsed from the NAT rule (IPv4 or IPv6).
 
 				We're checking which one is the IPv6 address to extract its fam_mask (prefix length).
-				Then we check if it's a valid value 
+				Then we check if it's a valid value
 				and throw an error otherwise.*/
 			switch (plen) {
 			case 32:
@@ -920,7 +920,10 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 			default:
     		/* everything else becomes 96 */
     		plen = 96;
-   			break; }
+   			break;
+		}
+		break;
+	}
 
 
 		case NPF_ALGO_NONE:
@@ -995,6 +998,7 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 		if (nt2){
 			npf_nat_setnat64plen(nt2, plen);
 		}
+		break;
 	default:
 		/*
 		 * Set the algorithm.

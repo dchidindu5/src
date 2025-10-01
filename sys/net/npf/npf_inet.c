@@ -790,6 +790,81 @@ npf_rwrcksum(const npf_cache_t *npc, u_int which,
 	return true;
 }
 
+/*Subsequently the whole of NAT64 will be moved to
+a seperate module*/
+
+/*
+ * Recompute TCP/UDP checksum for IPv6 -> IPv4 translation.
+ * Must be called after IPv4 header is filled in, before ip_output().
+ */
+static void
+npf_nat64_cksum4(struct mbuf *m, struct ip *ip, unsigned proto)
+{
+    switch (proto) {
+    case IPPROTO_TCP: {
+        struct tcphdr *th;
+
+        th = (struct tcphdr *)((char *)ip + (ip->ip_hl << 2));
+        th->th_sum = 0;
+        th->th_sum = in_cksum(m, IPPROTO_TCP, ip->ip_hl << 2,
+    	ntohs(ip->ip_len) - (ip->ip_hl << 2));
+        break;
+    }
+    case IPPROTO_UDP: {
+        struct udphdr *uh;
+
+        uh = (struct udphdr *)((char *)ip + (ip->ip_hl << 2));
+        uh->uh_sum = 0;
+        uh->uh_sum = in_cksum(m, IPPROTO_UDP, ip->ip_hl << 2,
+			ntohs(ip->ip_len) - (ip->ip_hl << 2));
+        break;
+    }
+    case IPPROTO_ICMPV6:
+    case IPPROTO_ICMP:
+    default:
+        /* ICMP handled elsewhere. */
+        break;
+    }
+}
+
+/*
+ * npf_nat64_cksum6
+ * Recompute transport-layer checksums after IPv4 -> IPv6 translation.
+ *
+ *   m   - the mbuf containing the packet
+ *   ip6 - pointer to the new IPv6 header
+ *   proto - next-header value (TCP/UDP/ICMPv6/etc.)
+ */
+static void
+npf_nat64_cksum6(struct mbuf *m, struct ip6_hdr *ip6, int proto)
+{
+        switch (proto) {
+        case IPPROTO_TCP: {
+                struct tcphdr *th =
+                    (struct tcphdr *)((char *)ip6 + sizeof(struct ip6_hdr));
+                th->th_sum = 0;
+                th->th_sum = in6_cksum(m, IPPROTO_TCP, sizeof(struct ip6_hdr),
+                ntohs(ip6->ip6_plen));
+                break;
+        }
+        case IPPROTO_UDP: {
+                struct udphdr *uh =
+                    (struct udphdr *)((char *)ip6 + sizeof(struct ip6_hdr));
+                uh->uh_sum = 0;
+                uh->uh_sum = in6_cksum(m, IPPROTO_UDP,sizeof(struct ip6_hdr),
+                ntohs(ip6->ip6_plen));
+                break;
+        }
+        case IPPROTO_ICMP:
+                /* ICMPv4 ->  ICMPv6 handled elsewhere */
+                break;
+        default:
+                /* Nothing to fix for other protocols */
+        break;
+        }
+}
+
+
 int
 npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 	u_int which, const npf_addr_t *pref, uint8_t plen)
@@ -899,6 +974,9 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		if (!npf_rwrcksum(npc, NPF_DST, &ip->ip_dst, 0)) {
     		return EINVAL;
 		}*/
+		npf_nat64_cksum4(m, ip, ip->ip_p);
+		/* Now pass to IP layer. */
+		return ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
 
 		break;
 	}
@@ -913,7 +991,7 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		/*Flow Label:  0 (all zero bits) */
 		// ip6->ip6_flow = 0;
 		ip6->ip6_flow = htonl(((ip->ip_tos & 0xff) << 20));
-		/* payload length, Total length value from the IPv4 header, 
+		/* payload length, Total length value from the IPv4 header,
 		* minus the size of the IPv4 header and IPv4 options
 		*/
 		ip6->ip6_plen = htons(ntohs(oip->ip_len) - (oip->ip_hl << 2));
@@ -929,6 +1007,8 @@ npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
 		// ip6->ip6_src = ipv6addr;
 		memcpy(&ip6->ip6_src, &ipv6addr, sizeof(struct in6_addr));
 
+		npf_nat64_cksum6(m, ip6, ip6->ip6_nxt);
+		return ip6_output(m, NULL, NULL, IPV6_FORWARDING, NULL, NULL, NULL);
 		break;
 	}
 	default:

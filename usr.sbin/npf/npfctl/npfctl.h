@@ -225,7 +225,7 @@ void		npfctl_build_rule(uint32_t, const char *, sa_family_t,
 		    const char *, const char *);
 void		npfctl_build_natseg(int, int, unsigned, const char *,
 		    const addr_port_t *, const addr_port_t *,
-		    const npfvar_t *, const filt_opts_t *, unsigned);
+		    const npfvar_t *, const filt_opts_t *, unsigned, unsigned);
 void		npfctl_build_maprset(const char *, int, const char *);
 void		npfctl_build_table(const char *, u_int, const char *);
 
