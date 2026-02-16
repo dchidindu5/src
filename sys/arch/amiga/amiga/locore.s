@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.172 2024/01/19 18:18:53 thorpej Exp $	*/
+/*	$NetBSD: locore.s,v 1.174 2025/12/04 02:55:23 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -906,11 +906,6 @@ Lstartnot040:
 	movl	#_C_LABEL(vectab),%a0
 	movc	%a0,%vbr
 
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
-
 /* let the C function initialize everything */
 	RELOC(start_c, %a0)
 	jbsr	%a0@
@@ -983,7 +978,6 @@ LMMUenable_end:
 	clrw	%a1@(PCB_FLAGS)		| clear flags
 #ifdef FPCOPROC
 	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-|WRONG!	movl	%a1,%sp@-
 |	pea	%a1@(PCB_FPCTX)
 |	jbsr	_C_LABEL(m68881_restore)	| restore it (does not kill a1)
 |	addql	#4,%sp

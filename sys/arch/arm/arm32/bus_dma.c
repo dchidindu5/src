@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.150 2025/09/26 07:48:46 skrll Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.153 2026/02/01 09:03:17 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2020 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.150 2025/09/26 07:48:46 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.153 2026/02/01 09:03:17 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -153,14 +153,14 @@ int	_bus_dmamap_load_buffer(bus_dma_tag_t, bus_dmamap_t, void *,
  */
 static inline struct arm32_dma_range *
 _bus_dma_paddr_inrange(struct arm32_dma_range *ranges, int nranges,
-    bus_addr_t curaddr)
+    paddr_t pa)
 {
 	struct arm32_dma_range *dr;
 	int i;
 
 	for (i = 0, dr = ranges; i < nranges; i++, dr++) {
-		if (curaddr >= dr->dr_sysbase &&
-		    curaddr < (dr->dr_sysbase + dr->dr_len))
+		if (pa >= dr->dr_sysbase &&
+		    pa < dr->dr_sysbase + dr->dr_len)
 			return dr;
 	}
 
@@ -1269,7 +1269,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 			STAT_INCR(sync_coherent_postread);
 			break;
 
-		/* BUS_DMASYNC_POSTWRITE was aleady handled as a fastpath */
+		/* BUS_DMASYNC_POSTWRITE was already handled as a fastpath */
 		}
 
 		/*

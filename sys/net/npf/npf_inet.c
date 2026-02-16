@@ -56,6 +56,8 @@ __KERNEL_RCSID(0, "$NetBSD: npf_inet.c,v 1.58 2025/07/01 18:42:37 joe Exp $");
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/ip_var.h>
+#include <netinet6/ip6_var.h>
 #endif
 
 #include "npf_impl.h"
@@ -921,6 +923,345 @@ npf_npt66_rwr(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
 		sum = 0x0000;
 	}
 	addr->word16[word] = sum;
+	return 0;
+}
+
+/*Subsequently the whole of NAT64 will be moved to
+a seperate module*/
+
+/*
+ * Recompute TCP/UDP checksum for IPv6 -> IPv4 translation.
+ * Must be called after IPv4 header is filled in, before ip_output().
+ */
+
+static void
+npf_nat64_cksum4(struct mbuf *m, struct ip *ip, unsigned proto)
+{
+    switch (proto) {
+    case IPPROTO_TCP: {
+        struct tcphdr *th;
+
+        th = (struct tcphdr *)((char *)ip + (ip->ip_hl << 2));
+        th->th_sum = 0;
+        th->th_sum = in4_cksum(m, IPPROTO_TCP, ip->ip_hl << 2,
+    	ntohs(ip->ip_len) - (ip->ip_hl << 2));
+        break;
+    }
+    case IPPROTO_UDP: {
+        struct udphdr *uh;
+
+        uh = (struct udphdr *)((char *)ip + (ip->ip_hl << 2));
+        uh->uh_sum = 0;
+        uh->uh_sum = in4_cksum(m, IPPROTO_UDP, ip->ip_hl << 2,
+			ntohs(ip->ip_len) - (ip->ip_hl << 2));
+        break;
+    }
+    case IPPROTO_ICMPV6:
+    case IPPROTO_ICMP:
+    default:
+        break;
+    }
+}
+
+/*
+ * npf_nat64_cksum6
+ * Recompute transport-layer checksums after IPv4 -> IPv6 translation.
+ *
+ *   m   - the mbuf containing the packet
+ *   ip6 - pointer to the new IPv6 header
+ *   proto - next-header value (TCP/UDP/ICMPv6/etc.)
+ */
+
+static void
+npf_nat64_cksum6(struct mbuf *m, struct ip6_hdr *ip6, int proto)
+{
+        switch (proto) {
+        case IPPROTO_TCP: {
+                struct tcphdr *th =
+                    (struct tcphdr *)((char *)ip6 + sizeof(struct ip6_hdr));
+                th->th_sum = 0;
+                th->th_sum = in6_cksum(m, IPPROTO_TCP, sizeof(struct ip6_hdr),
+                ntohs(ip6->ip6_plen));
+                break;
+        }
+        case IPPROTO_UDP: {
+                struct udphdr *uh =
+                    (struct udphdr *)((char *)ip6 + sizeof(struct ip6_hdr));
+                uh->uh_sum = 0;
+                uh->uh_sum = in6_cksum(m, IPPROTO_UDP,sizeof(struct ip6_hdr),
+                ntohs(ip6->ip6_plen));
+                break;
+        }
+        case IPPROTO_ICMP:
+                //ICMPv6 handled elsewhere
+                break;
+        default:
+        break;
+        }
+}
+
+
+
+int
+npf_nat64_rwrheader(npf_cache_t *npc, nbuf_t **nbuf,
+	u_int which, const npf_addr_t *pref, uint8_t plen)
+{
+	npf_addr_t *addr = npc->npc_ips[which];
+	struct mbuf *m = nbuf_head_mbuf(npc->npc_nbuf);
+	struct ip *ip = NULL;
+	struct ip6_hdr *ip6 = NULL;
+	size_t hlen;
+	npf_addr_t ipv4addr, ipv6addr;
+
+	//  cache layer3 info such as IP address.
+	KASSERT(npf_iscached(npc, NPC_IP46));
+	//cache layer4 info udp/tcp
+	KASSERT(npf_iscached(npc, NPC_LAYER4));
+	KASSERT(which == NPF_SRC || which == NPF_DST);
+
+	// Determine address
+	/* pointer to the source address of the original packet
+	* npc->npc_ips[npf_src]
+	*/
+	const npf_addr_t *src = (which == NPF_SRC) ? addr : npc->npc_ips[NPF_SRC];
+	const npf_addr_t *dst = (which == NPF_DST) ? addr : npc->npc_ips[NPF_DST];
+	(void)src;
+	(void)dst;
+	// remove the existing IP header
+	m_adj(m, npc->npc_hlen);
+
+	// If the original packet is IPv6,
+	//I'm going to rewrite it into IPv4 —
+	// so I need to reserve space for an IPv4 header.
+	// and vice versa
+
+	switch (npc->npc_info) {
+	case NPC_IP6:
+		hlen = sizeof(struct ip);
+		break;
+	case NPC_IP4:
+		hlen = sizeof(struct ip6_hdr);
+		break;
+	default:
+		return EINVAL;
+	}
+
+	m = m_prepend(m, hlen, M_DONTWAIT);
+	if (m == NULL) {
+		return ENOMEM;
+	}
+	nbuf_init(npc->npc_ctx, *nbuf, m, (*nbuf)->nb_ifp);
+
+
+	switch (npc->npc_info) {
+	case NPC_IP6: {
+		/* IPv6 -> IPv4 */
+		struct ip6_hdr *oip = npc->npc_ip.v6;
+		/*
+		mtod = “mbuf to data” macro.
+		It takes the mbuf (m) and casts the start of
+		its data region to the type we specify — here, struct ip *.
+		Purpose: We’re telling the kernel:
+		“The first bytes of the mbuf now hold an IPv4 header.”
+		*/
+		ip = mtod(m, struct ip *);
+	/*
+	Clears the IPv4 header memory.
+	Purpose: Avoids leftover garbage values before
+	we start setting fields.
+	*/
+		memset(ip, 0, sizeof(struct ip));
+
+		ip->ip_v     = IPVERSION;
+		ip->ip_hl    = sizeof(struct ip) >> 2;
+		ip->ip_tos = (ntohl(ip6->ip6_flow) >> 20) & 0xff;
+		ip->ip_len   = htons(hlen + ntohs(oip->ip6_plen));
+		ip->ip_id    = htons(0);
+		ip->ip_off   = htons(IP_DF);
+		ip->ip_ttl   = oip->ip6_hlim;
+		ip->ip_p     = npc->npc_proto;
+		ip->ip_sum = 0;
+		ip->ip_sum = in_cksum(m, ip->ip_hl << 2);
+		/*
+		In NAT64, an IPv4 address is only 32 bits (4 bytes).
+		If that IPv4 is stored in an npf_addr_t, it’s typically placed in the first 4 bytes of the 16-byte union.
+		That means: .word32[0] is used when the address is just a plain IPv4 (first 4 bytes).
+		router's public ipv4, set on the npf rule.
+		*/
+
+		 ip->ip_src.s_addr = addr->word32[0];
+
+		/* Destination IPv4: ipv4 addr extracted from the ipv6 address 
+		that we got from our DNS64 config
+		*/
+		npf_extract_ipv4(npc, NPF_DST, pref, plen, &ipv4addr);
+    	ip->ip_dst.s_addr = ipv4addr.word32[0];
+
+		npf_nat64_cksum4(m, ip, ip->ip_p);
+		/* Now pass to IP layer. */
+		return ip_output(m, NULL, NULL, IP_FORWARDING, NULL, NULL);
+
+		break;
+	}
+
+	case NPC_IP4: {
+		// logic for nat ip4 -> ip6 goes here
+		struct ip *oip = npc->npc_ip.v4;
+		ip6 = mtod(m, struct ip6_hdr *);
+        memset(ip6, 0, sizeof(struct ip6_hdr));
+
+		ip6->ip6_vfc  = IPV6_VERSION;
+		// On Netbsd Flowlabel and Traffic class are using the same field
+		ip6->ip6_flow = htonl(((ip->ip_tos & 0xff) << 20));
+
+		/* payload length, Total length value from the IPv4 header,
+		* minus the size of the IPv4 header and IPv4 options
+		*/
+		ip6->ip6_plen = htons(ntohs(oip->ip_len) - (oip->ip_hl << 2));
+        ip6->ip6_nxt  = oip->ip_p;
+		ip6->ip6_hlim = (oip->ip_ttl < IPV6_DEFHLIM) ? oip->ip_ttl : IPV6_DEFHLIM;
+		// ipv6 host- the ipv6 address of the host
+		memcpy(&ip6->ip6_dst, npc->npc_ips[NPF_SRC], sizeof(struct in6_addr));
+
+		/*source ipv6 will be from github ipv4 embedded ipv6 from our DNS64 config. */
+		npf_embed_ipv4(npc, NPF_SRC, pref, plen, &ipv6addr);
+		memcpy(&ip6->ip6_src, &ipv6addr, sizeof(struct in6_addr));
+
+		npf_nat64_cksum6(m, ip6, ip6->ip6_nxt);
+		return ip6_output(m, NULL, NULL, IPV6_FORWARDING, NULL, NULL, NULL);
+		break;
+	}
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
+
+
+
+/*
+ * IPv6-to-IPv4 Network Prefix Translation (NAT64), as per RFC 6052.
+ * Stateless Translation (SIIT)
+ */
+
+ /*
+GOAL 1: EXTRACT THE EMBEDDED IPV4 FROM THE IPV6
+ */
+int
+npf_extract_ipv4(const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
+	uint8_t plen, npf_addr_t *result_ipv4addr)
+{
+    const npf_addr_t *ipv6_dest;
+    uint8_t temp[16];            // Temporary buffer for adjusted address
+    uint8_t *adjusted;
+    npf_addr_t new_ipv4;
+    unsigned offset;
+
+    KASSERT(which == NPF_SRC || which == NPF_DST);
+
+    if (!npf_iscached(npc, NPC_IP6)) {
+        return EINVAL;
+    }
+
+    ipv6_dest = npc->npc_ips[NPF_DST];
+    memset(&new_ipv4, 0, sizeof(npf_addr_t));
+    memset(temp, 0, sizeof(temp));
+
+    switch (plen) {
+    case 32: offset = 4; break;
+    case 40: offset = 5; break;
+    case 48: offset = 6; break;
+    case 56: offset = 7; break;
+    case 64: offset = 8; break;
+
+    default:
+        // consider any other valid length as /96 by default
+        if (plen != 96) {
+            return EINVAL;
+        }
+        offset = 12;
+        break;
+    }
+
+    if (plen == 96) {
+        // No shifting needed, IPv4 in last 4 bytes
+        memcpy(&new_ipv4, ((const uint8_t *)ipv6_dest) + offset, sizeof(struct in_addr));
+    } else {
+        /* Copy the IPv6 address to a temp buffer */
+        memcpy(temp, ipv6_dest, sizeof(struct in6_addr));
+
+        /* Remove 'u' byte at byte 8 (shift bytes 9–15 left)
+		according to rfc 6052, section 2.3
+		*/
+        memmove(&temp[8], &temp[9], 7);  // Now temp is 15 bytes
+
+        /* Extract 4 bytes at offset */
+        adjusted = temp;
+        memcpy(&new_ipv4, adjusted + offset, sizeof(struct in_addr));
+    }
+
+    *result_ipv4addr = new_ipv4;
+    return 0;
+}
+
+int
+npf_embed_ipv4( const npf_cache_t *npc, u_int which, const npf_addr_t *pref,
+	uint8_t plen, npf_addr_t *result_ipv6addr)
+{
+    const npf_addr_t *ip_src;
+    uint8_t temp[16];            // Temporary buffer for adjusted address
+    unsigned offset;
+
+	KASSERT(which == NPF_SRC || which == NPF_DST);
+
+    if (!npf_iscached(npc, NPC_IP46)) {
+        return EINVAL;
+    }
+
+	ip_src = npc->npc_ips[NPF_SRC];
+	memset(result_ipv6addr, 0, sizeof(npf_addr_t));
+    memset(temp, 0, sizeof(temp));
+
+	/* Compute offset according to RFC 6052 */
+    switch (plen) {
+    case 32: offset = 4; break;
+    case 40: offset = 5; break;
+    case 48: offset = 6; break;
+    case 56: offset = 7; break;
+    case 64: offset = 8; break;
+    case 96: offset = 12; break;
+    /*I should make 96 the default case*/
+	default:
+        return EINVAL;
+    }
+	// I think prefix(ipv4) should come from the extracted ipv4 in the cache
+	if (plen == 96) {
+
+		/*Copy the nat64 ipv6 without an ipv4 TO result_ipv6 i.e the first 12 bytes*/
+        memcpy(result_ipv6addr, pref, 12);
+
+        memcpy(((uint8_t *)result_ipv6addr) + offset,
+               &ip_src->word32[0], sizeof(struct in_addr));
+    }
+	/*If the prefix length is less than 96 bits, insert the null octet
+      "u" at the appropriate position (bits 64 to 71), thus causing the
+      least significant octet to be excluded */
+	else{
+		/* copy prefix plen is byte aligned here) */
+        memcpy(temp, pref, plen / 8);
+
+        /* make space for the 'u' byte at index 8 by shifting bytes 8..14 right */
+        memmove(&temp[9], &temp[8], 7);
+
+        /* set the reserved 'u' byte to zero */
+        temp[8] = 0x00;
+
+        /* place the 4 IPv4 bytes at the "&ip_src->word32[0]" calculated offset */
+        memcpy(temp + offset, ip_src, sizeof(struct in_addr));
+
+        memcpy(result_ipv6addr, temp, sizeof(struct in6_addr));
+	}
 	return 0;
 }
 

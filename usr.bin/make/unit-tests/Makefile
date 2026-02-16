@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.372 2025/08/04 22:44:49 sjg Exp $
+# $NetBSD: Makefile,v 1.379 2026/02/11 21:39:21 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -402,6 +402,7 @@ TESTS+=		varmod-shell
 TESTS+=		varmod-subst
 TESTS+=		varmod-subst-regex
 TESTS+=		varmod-sun-shell
+TESTS+=		varmod-sun-shell1
 TESTS+=		varmod-sysv
 TESTS+=		varmod-tail
 TESTS+=		varmod-to-abs
@@ -540,6 +541,9 @@ SED_CMDS.job-output-long-lines= \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
 
+SED_CMDS.gnode-submake=		${STD_SED_CMDS.dj}
+SED_CMDS.gnode-submake=		${STD_SED_CMDS.dg2}
+
 # meta line numbers can vary based on filemon implementation
 SED_CMDS.meta-ignore= -e 's,\(\.meta:\)[1-9][0-9]*:,\1<line>:,'
 
@@ -553,6 +557,7 @@ SED_CMDS.opt-debug-lint+=	${STD_SED_CMDS.regex}
 SED_CMDS.opt-jobs-no-action=	${STD_SED_CMDS.hide-from-output}
 SED_CMDS.opt-no-action-runflags= ${STD_SED_CMDS.hide-from-output}
 SED_CMDS.opt-where-am-i=	-e '/usr.obj/d'
+SED_CMDS.opt-where-am-i+=	-e '/\/\//d'
 # For Compat_RunCommand, useShell == false.
 SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<not found: ...>,'
 # For Compat_RunCommand, useShell == true.
@@ -571,6 +576,7 @@ SED_CMDS.var-op-shell+=		${STD_SED_CMDS.shell}
 SED_CMDS.var-op-shell+=		-e '/command/s,No such.*,not found,'
 SED_CMDS.vardebug+=		-e 's,${.SHELL},</path/to/shell>,'
 SED_CMDS.varmod-mtime+=		-e "s,\(mtime for .*\): .*,\1: <ENOENT>,"
+SED_CMDS.varmod-subst+=		${STD_SED_CMDS.regex}
 SED_CMDS.varmod-subst-regex+=	${STD_SED_CMDS.regex}
 SED_CMDS.varparse-errors+=	${STD_SED_CMDS.timestamp}
 SED_CMDS.varname-dot-make-meta-ignore_filter+= ${SED_CMDS.meta-ignore}
@@ -586,7 +592,10 @@ SED_CMDS.varname-empty=		${.OBJDIR .PARSEDIR .PATH .SHELL .SYSPATH:L:@v@-e '/\\$
 # Some tests need an additional round of postprocessing.
 POSTPROC.depsrc-wait=		sed -e '/^---/d' -e 's,^\(: Making 3[abc]\)[123]$$,\1,'
 POSTPROC.deptgt-suffixes=	awk '/^\#\*\*\* Suffixes/,/^never-stop/'
-POSTPROC.gnode-submake=		awk '/Begin input graph/, /^$$/'
+POSTPROC.gnode-submake=		\
+	awk '/Begin input graph/, /^\# \.END/ { \
+		if (/made,/) print $$0 \
+	}'
 POSTPROC.varname-dot-make-mode=	sed 's,^\(: Making [abc]\)[123]$$,\1,'
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
@@ -724,7 +733,7 @@ LIMIT_RESOURCES?=	:
 # each other, and because they use different environment variables and
 # command line options.
 .SUFFIXES: .mk .rawout .out
-.mk.rawout:
+.mk.rawout:	.META
 	@${_MKMSG_TEST:Uecho '#      test '} ${.PREFIX}
 	@set -eu; \
 	${LIMIT_RESOURCES}; \
@@ -753,6 +762,12 @@ _SED_CMDS+=	-e 's,${.CURDIR},<curdir>,g'
 # which we get depending on how MAKEOBJDIR is set.
 _SED_CMDS+=	-e 's,${.OBJDIR},<curdir>,g' -e 's,${.OBJDIR:tA},<curdir>,g'
 .endif
+
+# At the end, make sure we cleanup any dregs...
+.for d in ${MAKEOBJDIRPREFIX:S,/$,,} /usr/obj
+_SED_CMDS_LAST+=	-e 's,$d,,'
+.endfor
+
 # always pretend .MAKE was called 'make'
 _SED_CMDS+=	-e 's,^${TEST_MAKE:T:S,.,\\.,g}[][0-9]*:,make:,'
 _SED_CMDS+=	-e 's,${TEST_MAKE:S,.,\\.,g},make,'
@@ -760,11 +775,11 @@ _SED_CMDS+=	-e 's,^usage: ${TEST_MAKE:T:S,.,\\.,g} ,usage: make ,'
 _SED_CMDS+=	-e 's,${TEST_MAKE:T:S,.,\\.,g}\(\[[1-9][0-9]*\][: ]\),make\1,'
 _SED_CMDS+=	-e 's,<curdir>/,,g'
 _SED_CMDS+=	-e 's,${UNIT_TESTS:S,.,\\.,g}/,,g'
-_SED_CMDS+=	-e '/MAKE_VERSION/d'
+_SED_CMDS+=	-e '/MAKE.VERSION/d'
 _SED_CMDS+=	-e '/EGREP=/d'
 
-.rawout.out:
-	@${TOOL_SED} ${_SED_CMDS} ${SED_CMDS.${.PREFIX:T}} \
+.rawout.out:	.META
+	@${TOOL_SED} ${_SED_CMDS} ${SED_CMDS.${.PREFIX:T}} ${_SED_CMDS_LAST} \
 	  < ${.IMPSRC} > ${.TARGET}.tmp
 	@${POSTPROC.${.PREFIX:T}:D \
 	    ${POSTPROC.${.PREFIX:T}} < ${.TARGET}.tmp > ${.TARGET}.post \

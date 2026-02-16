@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.213 2024/01/19 20:55:42 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.217 2025/12/20 10:51:05 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.213 2024/01/19 20:55:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.217 2025/12/20 10:51:05 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -133,7 +133,7 @@ int	cpu_dump(int (*)(dev_t, daddr_t, void *, size_t), daddr_t *);
 void	cpu_init_kcore_hdr(void);
 
 /* functions called from locore.s */
-void	x68k_init(void);
+void	x68k_init(paddr_t);
 void	dumpsys(void);
 void	straytrap(int, u_short);
 void	nmihand(struct frame);
@@ -170,6 +170,23 @@ static phys_seg_t phys_extmem_seg[EXTMEM_SEGS];
 int	delay_divisor = 140;	/* assume some reasonable value to start */
 static int cpuspeed;		/* MPU clock (in MHz) */
 
+
+#ifdef __HAVE_NEW_PMAP_68K
+/*
+ * machine_bootmap[] is checked in pmap_bootstrap1() of the new m68k pmap
+ * and it allocates kernel address space for intio devices.
+ */
+static vaddr_t intiova;
+#define PMBM_INTIO	0
+const struct pmap_bootmap machine_bootmap[] = {
+	{ .pmbm_vaddr_ptr = &intiova,
+	  .pmbm_paddr = INTIOBASE,
+	  .pmbm_size  = INTIOSIZE,
+	  .pmbm_flags = PMBM_F_CI },
+	{ .pmbm_vaddr = -1 },
+};
+#endif
+
 /*
  * Machine-dependent crash dump header info.
  */
@@ -178,11 +195,16 @@ cpu_kcore_hdr_t cpu_kcore_hdr;
 static callout_t candbtimer_ch;
 
 void
-x68k_init(void)
+x68k_init(paddr_t nextpa)
 {
 	u_int i;
 	paddr_t msgbuf_pa;
 	paddr_t s, e;
+
+#ifdef __HAVE_NEW_PMAP_68K
+	/* load the internal IO space region */
+	intiobase = (uint8_t *)intiova;
+#endif
 
 	/*
 	 * Most m68k ports allocate msgbuf at the end of available memory
@@ -195,6 +217,9 @@ x68k_init(void)
 	 * Tell the VM system about available physical memory.
 	 */
 	/* load the main memory region */
+	avail_start = nextpa;
+	avail_end = m68k_ptob(maxmem);
+
 	s = avail_start;
 	e = msgbuf_pa;
 	uvm_page_physload(atop(s), atop(e), atop(s), atop(e),
@@ -516,9 +541,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -548,9 +573,9 @@ cpu_reboot(int howto, char *bootstr)
 	}
 	if ((howto & RB_HALT) != 0) {
 		printf("System halted.  Hit any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -565,71 +590,24 @@ cpu_reboot(int howto, char *bootstr)
 void
 cpu_init_kcore_hdr(void)
 {
-	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
-	struct m68k_kcore_hdr *m = &h->un._m68k;
+	phys_ram_seg_t *ram_segs = pmap_init_kcore_hdr(&cpu_kcore_hdr);
 	psize_t size;
 #ifdef EXTENDED_MEMORY
 	int i, seg;
 #endif
 
-	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr));
-
-	/*
-	 * Initialize the `dispatcher' portion of the header.
-	 */
-	strcpy(h->name, machine);
-	h->page_size = PAGE_SIZE;
-	h->kernbase = KERNBASE;
-
-	/*
-	 * Fill in information about our MMU configuration.
-	 */
-	m->mmutype	= mmutype;
-	m->sg_v		= SG_V;
-	m->sg_frame	= SG_FRAME;
-	m->sg_ishift	= SG_ISHIFT;
-	m->sg_pmask	= SG_PMASK;
-	m->sg40_shift1	= SG4_SHIFT1;
-	m->sg40_mask2	= SG4_MASK2;
-	m->sg40_shift2	= SG4_SHIFT2;
-	m->sg40_mask3	= SG4_MASK3;
-	m->sg40_shift3	= SG4_SHIFT3;
-	m->sg40_addr1	= SG4_ADDR1;
-	m->sg40_addr2	= SG4_ADDR2;
-	m->pg_v		= PG_V;
-	m->pg_frame	= PG_FRAME;
-
-	/*
-	 * Initialize pointer to kernel segment table.
-	 */
-	m->sysseg_pa = (uint32_t)(pmap_kernel()->pm_stpa);
-
-	/*
-	 * Initialize relocation value such that:
-	 *
-	 *	pa = (va - KERNBASE) + reloc
-	 */
-	m->reloc = lowram;
-
-	/*
-	 * Define the end of the relocatable range.
-	 */
-	m->relocend = (uint32_t)&end;
-
-	/*
-	 * X68k has multiple RAM segments on some models.
-	 */
+	/* X68k has multiple RAM segments on some models. */
 	size = phys_basemem_seg.end - phys_basemem_seg.start;
-	m->ram_segs[0].start = phys_basemem_seg.start;
-	m->ram_segs[0].size  = size;
+	ram_segs[0].start = phys_basemem_seg.start;
+	ram_segs[0].size  = size;
 #ifdef EXTENDED_MEMORY
 	seg = 1;
 	for (i = 0; i < EXTMEM_SEGS; i++) {
 		size = phys_extmem_seg[i].end - phys_extmem_seg[i].start;
 		if (size == 0)
 			continue;
-		m->ram_segs[seg].start = phys_extmem_seg[i].start;
-		m->ram_segs[seg].size  = size;
+		ram_segs[seg].start = phys_extmem_seg[i].start;
+		ram_segs[seg].size  = size;
 		seg++;
 	}
 #endif

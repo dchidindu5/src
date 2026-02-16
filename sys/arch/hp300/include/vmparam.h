@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.41 2020/02/01 19:41:49 tsutsui Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.43 2025/12/01 03:53:24 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -60,7 +60,6 @@
  */
 #define	USRSTACK	(-HIGHPAGES*PAGE_SIZE)	/* Start of user stack */
 #define	BTOPUSRSTACK	(0x100000-HIGHPAGES)	/* btop(USRSTACK) */
-#define P1PAGES		0x100000
 #define HIGHPAGES	(0x100000/PAGE_SIZE)
 
 /*
@@ -109,13 +108,15 @@
 #define VM_MAXUSER_ADDRESS	((vaddr_t)0xFFF00000)
 #define VM_MAX_ADDRESS		((vaddr_t)0xFFF00000)
 #define VM_MIN_KERNEL_ADDRESS	((vaddr_t)0)
+#ifdef __HAVE_NEW_PMAP_68K
+extern vaddr_t kernel_virtual_max;
+#define VM_MAX_KERNEL_ADDRESS	(kernel_virtual_max)
+#else
 #define VM_MAX_KERNEL_ADDRESS	((vaddr_t)(0-PAGE_SIZE*NPTEPG*2))
+#endif
 
 /* virtual sizes (bytes) for various kernel submaps */
 #define VM_PHYS_SIZE		(USRIOSIZE*PAGE_SIZE)
-
-/* # of kernel PT pages (initial only, can grow dynamically) */
-#define VM_KERNEL_PT_PAGES	((vsize_t)2)
 
 /*
  * Constants which control the way the VM system deals with memory segments.
@@ -127,6 +128,10 @@
 #define	VM_NFREELIST		1
 #define	VM_FREELIST_DEFAULT	0
 
+#ifndef __HAVE_NEW_PMAP_68K
+/* # of kernel PT pages (initial only, can grow dynamically) */
+#define VM_KERNEL_PT_PAGES	((vsize_t)2)
+
 #define	__HAVE_PMAP_PHYSSEG
 
 /*
@@ -135,5 +140,6 @@
 struct pmap_physseg {
 	struct pv_header *pvheader;	/* pv table for this seg */
 };
+#endif /* __HAVE_NEW_PMAP_68K */
 
 #endif /* _HP300_VMPARAM_H_ */

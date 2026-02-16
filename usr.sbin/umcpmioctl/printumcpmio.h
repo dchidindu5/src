@@ -1,4 +1,4 @@
-/*	$NetBSD: printumcpmio.h,v 1.1 2024/12/16 16:37:40 brad Exp $	*/
+/*	$NetBSD: printumcpmio.h,v 1.2 2025/11/29 18:39:15 brad Exp $	*/
 
 /*
  * Copyright (c) 2024 Brad Spencer <brad@anduin.eldar.org>
@@ -22,9 +22,9 @@
 
 #include <dev/usb/umcpmio_hid_reports.h>
 
-EXTERN void print_status(struct mcp2221_status_res *);
-EXTERN void print_sram(struct mcp2221_get_sram_res *);
+EXTERN void print_status(uint8_t *, uint8_t);
+EXTERN void print_sram(uint8_t *, int, uint8_t);
 EXTERN void print_gpio_cfg(struct mcp2221_get_gpio_cfg_res *);
-EXTERN void print_flash(struct mcp2221_get_flash_res *,int);
+EXTERN void print_flash(uint8_t *,int, uint8_t);
 
 #endif

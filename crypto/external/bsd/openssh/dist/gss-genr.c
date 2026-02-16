@@ -1,4 +1,4 @@
-/*	$NetBSD: gss-genr.c,v 1.13 2025/10/11 15:45:06 christos Exp $	*/
+/*	$NetBSD: gss-genr.c,v 1.15 2025/12/28 09:54:06 nia Exp $	*/
 /* $OpenBSD: gss-genr.c,v 1.30 2025/09/29 21:28:33 dtucker Exp $ */
 
 /*

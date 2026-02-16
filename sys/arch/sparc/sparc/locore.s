@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.287 2025/09/06 02:53:23 riastradh Exp $	*/
+/*	$NetBSD: locore.s,v 1.289 2025/12/11 07:25:11 andvar Exp $	*/
 
 /*
  * Copyright (c) 1996 Paul Kranenburg
@@ -2782,7 +2782,7 @@ lev14_softint:
 	 ld	[%l6 + %lo(CPUINFO_VA+CPUINFO_XMSG_ARG0)], %l3	! prefetch 1st arg
 
 /*
- * Fast flush handlers. xcalled from other CPUs throught soft interrupt 14
+ * Fast flush handlers. xcalled from other CPUs through soft interrupt 14
  * On entry:	%l6 = CPUINFO_VA
  *		%l3 = first argument
  *
@@ -5916,7 +5916,7 @@ _ENTRY(_C_LABEL(no_asyncflt_regs))
 _ENTRY(_C_LABEL(hypersparc_pure_vcache_flush))
 	/*
 	 * Flush entire on-chip instruction cache, which is
-	 * a pure vitually-indexed/virtually-tagged cache.
+	 * a pure virtually-indexed/virtually-tagged cache.
 	 */
 	retl
 	 sta	%g0, [%g0] ASI_HICACHECLR

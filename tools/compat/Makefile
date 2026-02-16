@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.95 2025/09/18 20:19:26 christos Exp $
+#	$NetBSD: Makefile,v 1.97 2025/12/18 00:19:40 christos Exp $
 
 HOSTLIB=	nbcompat
 
@@ -13,7 +13,7 @@ SRCS=		atoll.c basename.c cdbr.c cdbw.c dirname.c \
 		mi_vector_hash.c mkdtemp.c mkstemps.c \
 		mkstemp.c pread.c putc_unlocked.c pwcache.c pwrite.c \
 		pw_scan.c \
-		raise_default_signal.c rb.c reallocarr.c reallocarray.c \
+		raise_default_signal.c rbtree.c reallocarr.c reallocarray.c \
 		rmd160.c rmd160hl.c \
 		regcomp.c regerror.c regexec.c regfree.c \
 		setenv.c setgroupent.c \
@@ -21,7 +21,7 @@ SRCS=		atoll.c basename.c cdbr.c cdbw.c dirname.c \
 		sha256hl.c sha384hl.c sha512hl.c \
 		shquote.c \
 		snprintb.c snprintf.c \
-		stat_flags.c strlcat.c strlcpy.c strmode.c \
+		stat_flags.c strlcat.c strlcpy.c strmode.c mempcpy.c \
 		strcasecmp.c strncasecmp.c strcasestr.c strndup.c strnlen.c \
 		strsep.c strsuftoll.c strtonum.c strtoll.c \
 		strtoi.c strtou.c \

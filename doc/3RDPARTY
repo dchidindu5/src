@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.2141 2025/10/11 15:51:21 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.2167 2026/02/15 19:58:40 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -44,12 +44,12 @@
 #
 
 Package:	acpica
-Version:	20250807
-Current Vers:	20250807
+Version:	20251212
+Current Vers:	20251212
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
-Date:		2025-09-06
+Date:		2026-001-17
 Mailing List:	devel@acpica.org
 License:	BSD-like
 Responsible:	jruoho,christos
@@ -127,12 +127,12 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.20.11/MPL
-Current Vers:	9.20.11/MPL
+Version:	9.20.18/MPL
+Current Vers:	9.20.18/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
-Home Page:	http://www.isc.org/software/bind/
-Date:		2025-07-17
+Home Page:	https://www.isc.org/software/bind/
+Date:		2026-01-29
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-announce
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-users
 Responsible:	christos
@@ -158,12 +158,12 @@ Location:	external/bsd/blocklist
 Notes:
 
 Package:	libuv
-Version:	1.44.2
-Current Vers:	1.45.0
+Version:	1.51.0
+Current Vers:	1.51.0
 Maintainer:	libuv
 Archive Site:	https://dist.libuv.org/dist/
 Home Page:	https://libuv.org
-Date:		2023-06-21
+Date:		2026-01-28
 Mailing List:	https://groups.google.com/forum/#!forum/libuv
 Responsible:	christos
 License:	mit
@@ -171,38 +171,47 @@ Location:	external/mit/libuv/dist
 Notes:
 
 Package:	unbound
-Version:	1.23.1
-Current Vers:	1.23.1
+Version:	1.24.2
+Current Vers:	1.24.2
 Maintainer:	Nlnetlabs
 Archive Site:	https://www.unbound.net/downloads/unbound-latest.tar.gz
 Home Page:	https://www.unbound.net/
-Date:		2025-09-06
+Date:		2026-01-16
 Mailing List:	https://unbound.nlnetlabs.nl/mailman/listinfo/unbound-users
 Responsible:	christos
 License:	BSD-like
 Location:	external/bsd/unbound/dist
 Vendor tag:	NLNETLABS
 Release tag:	unbound-M-m-t
-Current tag:	unbound-1-23-1
+Current tag:	unbound-1-24-2
 Notes:
 Use cleantags to import
-run configure and update config files in include
+run configure --with-libevent and update config files in include
 diff the new and previous config file and manually adjust
 
 Package:	nsd
-Version:	4.8.0
-Current Vers:	4.8.0
+Version:	4.14.0
+Current Vers:	4.14.0
 Maintainer:	Nlnetlabs
 Archive Site:	https://www.nlnetlabs.nl/svn/nsd/
 Home Page:	https://www.nlnetlabs.nl/projects/nsd/
-Date:		2024-02-17
+Date:		2026-01-15
 Mailing List:	https://open.nlnetlabs.nl/mailman/listinfo/nsd-users/
 Responsible:	christos
 License:	BSD-like
 Location:	external/bsd/nsd/dist
+Release tag	nsd-M-m-t
+Current tag	nsd-1-14-0
 Notes:
-Use cleantags to import
-run configure and update config files in include
+- Use cleantags to import
+- run configure and update config files in include
+- autoconf does not work propelry:
+  configure does not work detecting sizeof off_t, comment it out.
+  autoreconf -f -i
+  other stuff hand-changed in config.h
+- needs the protobuf-c package to create export.h, build it and then
+  copy into dist
+- disable dnstap, needs too much stuff from pkgsrc
 
 Package:	libbind [libc resolver and includes]
 Version:	libbind-6.0-rc1
@@ -247,12 +256,12 @@ is a FreeBSD committer who has been helpful with incorporating changes
 in the past.
 
 Package:	byacc
-Version:	20240109
-Current Vers:	20240109
+Version:	20241231
+Current Vers:	202401231
 Maintainer:	Thomas Dickey <dickey@invisible-island.net>
 Archive Site:	http://www.invisible-island.net/byacc/byacc.html
 Home Page:	http://www.invisible-island.net/byacc/byacc.html
-Date:		2024-09-14
+Date:		2026-101-18
 Mailing List:
 Responsible:	christos
 License:	Public Domain
@@ -425,11 +434,11 @@ Notes:
 
 Package:	expat
 Version:	2.7.1
-Current Vers:	2.7.3
+Current Vers:	2.7.4
 Maintainer:	Expat Project
 Archive Site:	https://github.com/libexpat/libexpat/releases
 Home Page:	http://www.libexpat.org/
-Date:		2025-09-25
+Date:		2026-01-31
 Mailing List:	expat-discuss@libexpat.org
 Responsible:	mrg
 License:	MIT
@@ -458,7 +467,7 @@ Current Vers:	2.6.4
 Maintainer:	Will Estes <wlestes@users.sourceforge.net>
 Archive Site:	https://github.com/westes/flex/releases
 Home Page:	https://github.com/westes/flex
-Date:		2021-03-01
+Date:		2026-01-30
 Mailing List:	http://lists.sourceforge.net/mailman/listinfo/flex-announce
 Responsible:
 License:	BSD-like
@@ -467,12 +476,12 @@ Notes:
 There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
-Version:	10.5.0/12.5.0
-Current Vers:	10.5.0/12.5.0/13.3.0/14.2.0/15.1.0
+Version:	12.5.0/14.3.0
+Current Vers:	12.5.0/13.4.0/14.3.0/15.2.0
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	https://www.gnu.org/software/gcc/
-Date:		2025-07-21
+Date:		2026-01-06
 Mailing List:	gcc-bugs@gnu.org
 Responsible:	mrg, christos, skrll
 License:	GPLv3, LGPLv3.1
@@ -499,11 +508,11 @@ Before importing a new version of external/gpl3/gcc:
 
 Package:	gdb
 Version:	16.3
-Current Vers:	16.3
+Current Vers:	17.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
 Home Page:	http://www.gnu.org/software/gdb/
-Date:		2025-09-02
+Date:		2026-01-30
 Mailing List:	bug-gdb@gnu.org
 Responsible:	christos
 License:	GPLv3, LGPLv3.1
@@ -515,12 +524,12 @@ When updating GDB, it is imperative to test that:
 	  ("options KGDB") works correctly.
 
 Package:	binutils
-Version:	2.45
-Current Vers:	2.45
+Version:	2.46
+Current Vers:	2.46
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
 Home Page:	https://www.gnu.org/software/binutils/
-Date:		2025-08-26
+Date:		2026-02-15
 Mailing List:	bug-gnu-utils@gnu.org
 Responsible:	thorpej, mrg
 License:	GPLv3, LGPLv3, GPLv2, LGPLv2, BSD
@@ -722,11 +731,11 @@ directory.
 
 Package:	less
 Version:	less-643
-Current Vers:	less-679
+Current Vers:	less-685
 Maintainer:	Mark Nudelman <markn@greenwoodsoftware.com>
 Archive Site:	http://www.greenwoodsoftware.com/less/download.html
 Home Page:	http://www.greenwoodsoftware.com/less/
-Date:		2023-11-21
+Date:		2025-11-01
 Mailing List:	less-announce-request@greenwoodsoftware.com
 Responsible:	mrg, simonb
 License:	Less License (BSD 2-clause) or GPLv3 (v2 prior to less-418)
@@ -738,17 +747,18 @@ for importation.  Run ./configure beforehand to generate "defines.h".
 Talk to mrg before importing any new version.
 
 Package:	libarchive
-Version:	3.7.7
-Current Vers:	3.8.1
+Version:	3.8.5
+Current Vers:	3.8.5
 Maintainer:	kientzle@freebsd.org, joerg@NetBSD.org
 Archive Site:	https://github.com/libarchive/libarchive/releases
 Home Page: 	http://www.libarchive.org
-Date:		2025-09-06
+Date:		2026-01-30
 Responsible:	joerg
 License:	BSD (2-clause)
 Location:	external/bsd/libarchive/dist
 Notes:
 Distribution is stripped down to the relevant part.
+run configure against the full distribution and adjust include/config_netbsd.h
 
 Package:	libdevmapper
 Version:	1.02.40
@@ -812,11 +822,11 @@ import. Talk to haad before importing new version.
 
 Package:	libpcap
 Version:	1.10.5
-Current Vers:	1.10.5
+Current Vers:	1.10.6
 Maintainer:	tcpdump-workers@tcpdump.org
 Archive Site:	http://www.tcpdump.org/release/
 Home Page:	http://www.tcpdump.org/
-Date:		2025-09-06
+Date:		2026-01-18
 Mailing List:	tcpdump-workers@tcpdump.org
 Responsible:	dyoung
 License:	BSD (3/4-clause)
@@ -828,11 +838,11 @@ own copy of bpf_filter.c
 
 Package:	tcpdump
 Version:	4.99.5
-Current Vers:	4.99.5
+Current Vers:	4.99.6
 Maintainer:	tcpdump-workers@lists.tcpdump.org
 Archive Site:	http://www.tcpdump.org/release/
 Home Page:	http://www.tcpdump.org/
-Date:		2025-09-03
+Date:		2026-01-18
 Mailing List:	tcpdump-workers@lists.tcpdump.org
 Responsible:
 License:	BSD (3-clause)
@@ -1080,12 +1090,12 @@ Current tag:	zingiber-2025-05-31
 Notes:
 
 Package:	openresolv
-Version:	3.16.2 (patched to 3.16.3)
-Current Vers:	3.16.3
+Version:	3.17.3
+Current Vers:	3.17.1 (patched to 3.17.3)
 Maintainer:	roy
 Archive Site:	https://github.com/NetworkConfiguration/openresolv/releases
 Home Page:	http://roy.marples.name/projects/openresolv/
-Date:		2025-05-07
+Date:		2025-12-11
 License:	BSD (2-clause)
 Location:	external/bsd/openresolv/dist
 Notes:
@@ -1154,12 +1164,12 @@ markus is very cooperative about it):
 - LIBWRAP support is maintained (now in sshd-session.c)
 
 Package:	OpenSSL
-Version:	1.0.2o/1.1.1t/3.0.16/3.5.1
-Current Vers:	1.0.2zm/1.1.1zd/3.0.18/3.2.6/3.3.5/3.4.3/3.5.4
+Version:	1.0.2o/1.1.1t/3.0.16/3.5.5
+Current Vers:	1.0.2zm/1.1.1zd/3.0.18/3.2.6/3.3.5/3.4.4/3.5.5,3.6.1
 Maintainer:	The OpenSSL Project
 Archive Site:	https://github.com/openssl/openssl/releases
 Home Page:	http://www.openssl.org/
-Date:		2025-09-30
+Date:		2026-01-27
 Mailing List:	openssl-announce@openssl.org
 Responsible:	christos, mjf, tls, riastradh, spz
 License:	Apache2
@@ -1281,11 +1291,11 @@ now to do a new import.
 
 Package:	Postfix
 Version:	3.10.1
-Current Vers:	3.10.4
+Current Vers:	3.10.7
 Maintainer:	Wietse Venema <wietse@porcupine.org>
 Archive Site:
-Home Page:	http://www.postfix.org/
-Date: 		2025-09-02
+Home Page:	https://www.postfix.org/
+Date: 		2026-01-18
 Mailing List:	postfix-users@postfix.org
 Responsible:	christos
 License:	IBM Public License. See also src/external/ibm-public/postfix/dist.
@@ -1379,10 +1389,10 @@ original.
 
 Package:	sqlite
 Version:	3.45.1
-Current Vers:	3.50.3
+Current Vers:	3.51.2
 Maintainer:	Richard Hipp <drh@sqlite.org>
 Home Page:	http://www.sqlite.org
-Date: 		2025-07-29
+Date: 		2026-01-18
 Responsible:	joerg
 License:	Public domain
 Location:	external/public-domain/sqlite/dist
@@ -1428,12 +1438,12 @@ perhaps this implementation should be kept anyway for historical
 purposes.
 
 Package:	tmux
-Version:	3.5a
-Current Vers:	3.5a
+Version:	3.6a
+Current Vers:	3.6a
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
-Date: 		2024-11-09
+Date: 		2026-01-18
 Mailing List:	tmux-users@googlegroups.com
 Responsible:	christos
 License:	BSD
@@ -1448,13 +1458,15 @@ Package:	top
 Version:	3.8beta1
 Current Vers:	3.8beta1
 Maintainer:	William LeFebvre <wnl@groupsys.com>
-Archive Site:	http://www.unixtop.org/dist/top-3.8beta1.tar.gz
-Home Page:	http://www.unixtop.org/
-Mailing List:	top-spinners@ocee.groupsys.com
+Archive Site:	[dead] http://www.unixtop.org/dist/top-3.8beta1.tar.gz
+Home Page:	[dead] http://www.unixtop.org/
+Date: 		2026-01-18
+Mailing List:	[dead] top-spinners@ocee.groupsys.com
 Responsible:	simonb, christos
 License:	BSD (2-clause)
 Location:	external/bsd/top/dist
 Notes:
+We are the upstream now.
 
 Package:	traceroute
 Version:	1.4a12
@@ -1482,14 +1494,14 @@ Location:	external/bsd/tradcpp
 Notes:
 
 Package:	tz
-Version:	tzcode2025b / tzdata2025bgtz
-Current Vers:	tzcode2025b / tzdata2025b
+Version:	tzcode2025c / tzdata2025cgtz
+Current Vers:	tzcode2025c / tzdata2025c
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
 Old Archive Site:	ftp://elsie.nci.nih.gov/pub/
 Home Page:	http://www.iana.org/time-zones
-Date:		2025-04-02
+Date:		2025-12-18
 Mailing List:	tz@iana.org
 Responsible:	kleink, christos, kre
 License:	Public domain

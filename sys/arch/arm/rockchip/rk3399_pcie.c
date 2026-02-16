@@ -1,4 +1,4 @@
-/* $NetBSD: rk3399_pcie.c,v 1.23 2024/11/21 07:15:00 skrll Exp $ */
+/* $NetBSD: rk3399_pcie.c,v 1.25 2025/12/11 08:03:33 skrll Exp $ */
 /*
  * Copyright (c) 2018 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -16,28 +16,28 @@
  */
 
 #include <sys/cdefs.h>
-
-__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.23 2024/11/21 07:15:00 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.25 2025/12/11 08:03:33 skrll Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bitops.h>
-#include <sys/device.h>
-#include <sys/kmem.h>
 
-#include <machine/intr.h>
+#include <sys/bitops.h>
 #include <sys/bus.h>
-#include <dev/fdt/fdtvar.h>
-#include <dev/fdt/syscon.h>
-#include <arm/cpufunc.h>
+#include <sys/device.h>
+#include <sys/gpio.h>
+#include <sys/kmem.h>
+#include <sys/systm.h>
 
 #include <dev/pci/pcidevs.h>
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pciconf.h>
 
+#include <dev/fdt/fdtvar.h>
+#include <dev/fdt/syscon.h>
+
+#include <machine/intr.h>
+#include <arm/cpufunc.h>
 #include <arm/fdt/pcihost_fdtvar.h>
-#include <sys/gpio.h>
 
 #define SETREG(m, v)			((m)<<16|__SHIFTIN((v), (m)))
 #define GETREG(m, v)			(__SHIFTOUT((v), (m)))
@@ -278,7 +278,8 @@ rkpcie_attach(device_t parent, device_t self, void *aux)
 		bus_scan_delay_ms = 0;
 
 again:
-	fdtbus_gpio_write(ep_gpio, 0);
+	if (ep_gpio)
+		fdtbus_gpio_write(ep_gpio, 0);
 
 	reset_assert(phandle, "aclk");
 	reset_assert(phandle, "pclk");
@@ -333,7 +334,9 @@ again:
 	reset_deassert(phandle, "mgmt");
 	reset_deassert(phandle, "pipe");
 
-	fdtbus_gpio_write(ep_gpio, 1);
+	if (ep_gpio)
+		fdtbus_gpio_write(ep_gpio, 1);
+
 	delay(20000);	/* 20 ms according to PCI-e BS "Conventional Reset" */
 	delayed_ms += 20;
 
@@ -375,7 +378,8 @@ again:
 	delay(80000);	/* wait 100 ms before CSR access. already waited 20. */
 	delayed_ms += 80;
 
-	fdtbus_gpio_release(ep_gpio);
+	if (ep_gpio)
+		fdtbus_gpio_release(ep_gpio);
 
 	HWRITE4(sc, PCIE_RC_BASE + PCI_CLASS_REG,
 	    PCI_CLASS_BRIDGE << PCI_CLASS_SHIFT |

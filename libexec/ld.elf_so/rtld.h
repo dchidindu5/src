@@ -1,4 +1,4 @@
-/*	$NetBSD: rtld.h,v 1.150 2025/05/02 23:04:31 riastradh Exp $	 */
+/*	$NetBSD: rtld.h,v 1.155 2026/02/10 06:03:30 skrll Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -39,6 +39,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/param.h>
+#include <sys/endian.h>
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/exec_elf.h>
@@ -308,6 +309,8 @@ typedef struct Struct_Obj_Entry {
 	size_t		init_arraysz;	/* # of entries in it */
 	fptr_t		*fini_array;	/* start of fini array */
 	size_t		fini_arraysz;	/* # of entries in it */
+	fptr_t		*preinit_array;	/* start of preinit array */
+	size_t		preinit_arraysz;/* # of entries in it */
 	/* IRELATIVE relocations */
 	size_t		ifunc_remaining;
 #if \
@@ -425,6 +428,10 @@ Obj_Entry *_rtld_load_object(const char *, int);
 int _rtld_load_needed_objects(Obj_Entry *, int);
 int _rtld_preload(const char *);
 
+/* arch/<arch>/fixup.c */
+int _rtld_map_segment_fixup(const char *, int, Elf_Ehdr *, Elf_Phdr *,
+    caddr_t, size_t, int);
+
 #define	OBJ_ERR	(Obj_Entry *)(-1)
 /* path.c */
 void _rtld_add_paths(const char *, Search_Path **, const char *);
@@ -474,7 +481,7 @@ _rtld_fetch_ventry(const Obj_Entry *obj, unsigned long symnum)
 	Elf_Half vernum;
 
 	if (obj->vertab) {
-		vernum = VER_NDX(obj->versyms[symnum].vs_vers);
+		vernum = VER_NDX(obj->versyms[symnum]);
 		if (vernum >= obj->vertabnum) {
 			_rtld_error("%s: symbol %s has wrong verneed value %d",
 			    obj->path, &obj->strtab[symnum], vernum);

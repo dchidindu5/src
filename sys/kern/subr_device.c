@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_device.c,v 1.18 2025/10/13 14:41:40 thorpej Exp $	*/
+/*	$NetBSD: subr_device.c,v 1.20 2026/01/04 03:15:42 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2006, 2021, 2025 The NetBSD Foundation, Inc.
@@ -27,15 +27,17 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_device.c,v 1.18 2025/10/13 14:41:40 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_device.c,v 1.20 2026/01/04 03:15:42 riastradh Exp $");
 
 #include <sys/param.h>
+#include <sys/types.h>
+
 #include <sys/device.h>
+#include <sys/device_calls.h>
 #include <sys/device_impl.h>
 #include <sys/kmem.h>
+#include <sys/sdt.h>
 #include <sys/systm.h>
-
-#include <sys/device_calls.h>
 
 /* Root device. */
 device_t			root_device;
@@ -394,7 +396,7 @@ device_call_generic(device_t dev, devhandle_t handle,
 
 	call = devhandle_lookup_device_call(handle, gen->name, &call_handle);
 	if (call == NULL) {
-		return ENOTSUP;
+		return SET_ERROR(ENOTSUP);
 	}
 	return call(dev, call_handle, gen->args);
 }
@@ -430,7 +432,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 	 */
 	propval = prop_dictionary_get(dict, args->prop);
 	if (propval == NULL) {
-		return ENOENT;
+		return SET_ERROR(ENOENT);
 	}
 
 	/*
@@ -445,7 +447,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 		KASSERT(args->buf != NULL);
 		KASSERT(args->buflen != 0);
 		if (objtype != PROP_TYPE_DATA && objtype != PROP_TYPE_STRING) {
-			return EFTYPE;
+			return SET_ERROR(EFTYPE);
 		}
 		break;
 
@@ -458,7 +460,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 		KASSERT(args->buf != NULL);
 		KASSERT(args->buflen != 0);
 		if (args->reqtype != objtype) {
-			return EFTYPE;
+			return SET_ERROR(EFTYPE);
 		}
 	}
 
@@ -485,7 +487,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 				    args->buf);
 			}
 			if (! rv) {
-				return EIO;	/* off the rails */
+				return SET_ERROR(EIO);	/* off the rails */
 			}
 		}
 		break;
@@ -495,7 +497,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 		args->propsize = prop_string_size(propval) + 1;
 		if (args->buf != NULL) {
 			if (args->buflen < args->propsize) {
-				return EFBIG;
+				return SET_ERROR(EFBIG);
 			}
 			strlcpy(args->buf, prop_string_value(propval),
 			    args->buflen);
@@ -506,7 +508,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 		args->propsize = prop_data_size(propval);
 		if (args->buf != NULL) {
 			if (args->buflen < args->propsize) {
-				return EFBIG;
+				return SET_ERROR(EFBIG);
 			}
 			memcpy(args->buf, prop_data_value(propval),
 			    args->propsize);
@@ -522,7 +524,7 @@ device_getprop_dict(device_t dev, struct device_get_property_args *args)
 		break;
 
 	default:
-		return EFTYPE;
+		return SET_ERROR(EFTYPE);
 	}
 
 	return 0;
@@ -925,11 +927,11 @@ device_getprop_int32_internal(device_t dev, const char *prop, int32_t *valp)
 	}
 
 	if (! device_getprop_number_sext(&args, (uint64_t *)&val64)) {
-		return ERANGE;
+		return SET_ERROR(ERANGE);
 	}
 
 	if (val64 < INT32_MIN || val64 > INT32_MAX) {
-		return ERANGE;
+		return SET_ERROR(ERANGE);
 	}
 
 	*valp = (int32_t)val64;
@@ -954,7 +956,7 @@ device_getprop_uint32_internal(device_t dev, const char *prop, uint32_t *valp)
 	}
 
 	if (val64 > UINT32_MAX) {
-		return ERANGE;
+		return SET_ERROR(ERANGE);
 	}
 
 	*valp = (uint32_t)val64;
@@ -979,7 +981,7 @@ device_getprop_int64_internal(device_t dev, const char *prop, int64_t *valp)
 	}
 
 	if (! device_getprop_number_sext(&args, &val64)) {
-		return ERANGE;
+		return SET_ERROR(ERANGE);
 	}
 
 	*valp = val64;

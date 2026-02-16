@@ -1,4 +1,4 @@
-/*	$NetBSD: genfb.c,v 1.92 2025/04/29 12:20:36 tsutsui Exp $ */
+/*	$NetBSD: genfb.c,v 1.94 2026/01/10 23:55:24 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2007 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.92 2025/04/29 12:20:36 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.94 2026/01/10 23:55:24 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

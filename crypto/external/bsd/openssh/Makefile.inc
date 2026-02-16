@@ -1,11 +1,16 @@
-#	$NetBSD: Makefile.inc,v 1.17 2025/09/23 20:18:10 rillig Exp $
+#	$NetBSD: Makefile.inc,v 1.20 2025/12/28 11:15:00 nia Exp $
 
 WARNS?=	4
 
 .include <bsd.own.mk>
 
 USE_FORT?= yes	# network client/server
+
+# Avoid increasing the binary size by not linking with libcrypto
+# on static platforms.
+.if ${MACHINE_ARCH} != "m68000"
 WITH_OPENSSL=1
+.endif
 
 SSHDIST?= ${NETBSDSRCDIR}/crypto/external/bsd/openssh/dist
 
@@ -20,7 +25,12 @@ CPPFLAGS+=-DHAVE_STDLIB_H
 CPPFLAGS+=-DOPENSSL_API_COMPAT=0x10100000L
 .endif
 
-CPPFLAGS+=-DWITH_OPENSSL -DENABLE_PKCS11 -DWITH_XMSS -DWITH_ZLIB -DWITH_DSA
+.ifdef WITH_OPENSSL
+CPPFLAGS+=-DWITH_OPENSSL -DENABLE_PKCS11
+.endif
+
+CPPFLAGS+=-DWITH_ZLIB
+
 .if !defined(NOPIC)
 CPPFLAGS+=-DHAVE_DLOPEN
 .endif
@@ -52,3 +62,10 @@ LINTFLAGS+=	-X 117	# nonportable '>>' on signed integer type
 LINTFLAGS+=	-X 231	# parameter unused
 LINTFLAGS+=	-X 247	# pointer cast to unrelated type
 LINTFLAGS+=	-X 351	# missing header declaration
+
+# We install libssh in /usr/lib/private so applications don't
+# accidentally link against it.  Set LIBSUBDIR so libssh.so.N and
+# libssh.so.N.M will be installed there there, and set PROGDPSUBDIRS so
+# ssh/sshd/sshd-session/&c. will find it at link-time.
+LIBSUBDIR=	private
+PROGDPSUBDIRS+=	private

@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.71 2025/08/23 06:44:34 skrll Exp $ */
+/* $NetBSD: armreg.h,v 1.73 2026/01/02 23:11:39 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -685,7 +685,7 @@ AARCH64REG_WRITE_INLINE(esr_el1)
 #define	 ESR_EC_TME		 0x1b	// A64: TSTART instruction (FEAT_TME)
 #define	 ESR_EC_FRAC		 0x1c	// A64: Pointer auth trap (FEAT_FPAC)
 #define	 ESR_EC_SME		 0x1d	// AXX: Access to SME (FEAT_SME)
-#define	 ESR_EC_RME		 0x1e	// A64: Granule Protection  Check (FEAT_RME)
+#define	 ESR_EC_RME		 0x1e	// A64: Granule Protection Check (FEAT_RME)
 #define	 ESR_EC_INSN_ABT_EL_LOW	 0x20	// AXX: Instruction Abort from lower level
 #define	 ESR_EC_INSN_ABT_EL_CUR	 0x21	// AXX: Instruction Abort from current level
 #define	 ESR_EC_PC_ALIGNMENT	 0x22	// AXX: Misaligned PC
@@ -846,7 +846,7 @@ AARCH64REG_WRITE_INLINE(hcr_el2)
 #define	HCR_EL2_TID0		__BIT(15)	// trap ID group0 regs
 #define	HCR_EL2_TWE		__BIT(14)	// trap WFE
 #define	HCR_EL2_TWI		__BIT(13)	// trap WFI
-#define	HCR_EL2_DC		__BIT(12)	// default cacheablility
+#define	HCR_EL2_DC		__BIT(12)	// default cacheability
 #define	HCR_EL2_BSU		__BITS(11,10)	// barrier shareability upgrade
 #define	HCR_EL2_FB		__BIT(9)	// force broadcast TLBI and IC
 #define	HCR_EL2_VSE		__BIT(8)	// inject Virtual SError

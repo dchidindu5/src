@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.h,v 1.14 2020/07/06 09:34:17 rin Exp $	*/
+/*	$NetBSD: trap.h,v 1.16 2026/01/09 22:54:33 jmcneill Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -64,6 +64,9 @@
 /* The following are only available on 750/7400: */
 #define	EXC_THRM	0x1700		/* Thermal Management Interrupt */
 
+/* The following are only available on IBM Espresso: */
+#define EXC_IPI		0x1700		/* Inter-processor Interrupt */
+
 /* And these are only on the 603: */
 #define	EXC_IMISS	0x1000		/* Instruction translation miss */
 #define	EXC_DLMISS	0x1100		/* Data load translation miss */
@@ -85,7 +88,7 @@
 #define	EXC_ITERROR	0x1300		/* Instruction TLB Error */
 #define	EXC_DTERROR	0x1400		/* Data TLB Error */
 #define	EXC_DBREAK	0x1c00		/* data breakpoint */
-#define	EXC_IBREAK	0x1d00		/* instructin breakpoint */
+#define	EXC_IBREAK	0x1d00		/* instruction breakpoint */
 
 /* The following are only present on 64 bit PPC implementations */
 #define EXC_DSEG	0x380

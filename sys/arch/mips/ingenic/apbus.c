@@ -1,4 +1,4 @@
-/*	$NetBSD: apbus.c,v 1.21 2021/08/07 16:18:59 thorpej Exp $ */
+/*	$NetBSD: apbus.c,v 1.23 2026/01/15 16:57:39 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 Michael Lorenz
@@ -29,7 +29,7 @@
 /* catch-all for on-chip peripherals */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: apbus.c,v 1.21 2021/08/07 16:18:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: apbus.c,v 1.23 2026/01/15 16:57:39 skrll Exp $");
 
 #include "locators.h"
 #define	_MIPS_BUS_DMA_PRIVATE

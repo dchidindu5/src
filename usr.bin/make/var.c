@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.1172 2025/09/16 15:15:47 sjg Exp $	*/
+/*	$NetBSD: var.c,v 1.1178 2026/02/01 16:42:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -93,7 +93,9 @@
  *	Var_Value	Return the unexpanded value of a variable, or NULL if
  *			the variable is undefined.
  *
- *	Var_Subst	Substitute all expressions in a string.
+ *	Var_Subst	Copy a string, expanding expressions on the way.
+ *
+ *	Var_Expand	Expand all expressions in a string, in-place.
  *
  *	Var_Parse	Parse an expression such as ${VAR:Mpattern}.
  *
@@ -128,7 +130,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.1172 2025/09/16 15:15:47 sjg Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.1178 2026/02/01 16:42:34 rillig Exp $");
 
 /*
  * Variables are defined using one of the VAR=value assignments.  Their
@@ -314,21 +316,17 @@ static bool save_dollars = true;
 /*
  * A scope collects variable names and their values.
  *
- * The main scope is SCOPE_GLOBAL, which contains the variables that are set
- * in the makefiles.  SCOPE_INTERNAL acts as a fallback for SCOPE_GLOBAL and
- * contains some internal make variables.  These internal variables can thus
- * be overridden, they can also be restored by undefining the overriding
- * variable.
+ * Each target has its own scope, containing the 7 target-local variables
+ * .TARGET, .ALLSRC, etc.  Variables set on dependency lines also go in
+ * this scope.
  *
  * SCOPE_CMDLINE contains variables from the command line arguments.  These
  * override variables from SCOPE_GLOBAL.
  *
+ * SCOPE_GLOBAL contains the variables that are set in the makefiles.
+ *
  * There is no scope for environment variables, these are generated on-the-fly
  * whenever they are referenced.
- *
- * Each target has its own scope, containing the 7 target-local variables
- * .TARGET, .ALLSRC, etc.  Variables set on dependency lines also go in
- * this scope.
  */
 
 GNode *SCOPE_CMDLINE;
@@ -400,6 +398,7 @@ EvalStack_Details(Buffer *buf)
 		const char* value = elem->value != NULL
 		    && (kind == VSK_VARNAME || kind == VSK_EXPR)
 		    ? elem->value->str : NULL;
+		const GNode *gn;
 
 		Buf_AddStr(buf, "\t");
 		Buf_AddStr(buf, descr[kind]);
@@ -409,7 +408,16 @@ EvalStack_Details(Buffer *buf)
 			Buf_AddStr(buf, "\" with value \"");
 			Buf_AddStr(buf, value);
 		}
-		Buf_AddStr(buf, "\"\n");
+		if (kind == VSK_TARGET
+		    && (gn = Targ_FindNode(elem->str)) != NULL
+		    && gn->fname != NULL) {
+			Buf_AddStr(buf, "\" from ");
+			Buf_AddStr(buf, gn->fname);
+			Buf_AddStr(buf, ":");
+			Buf_AddInt(buf, (int)gn->lineno);
+			Buf_AddStr(buf, "\n");
+		} else
+			Buf_AddStr(buf, "\"\n");
 	}
 	return evalStack.len > 0;
 }
@@ -1267,12 +1275,8 @@ Var_Exists(GNode *scope, const char *name)
 }
 
 /*
- * See if the given variable exists, in the given scope or in other
- * fallback scopes.
- *
- * Input:
- *	scope		scope in which to start search
- *	name		name of the variable to find, is expanded once
+ * See if the given variable exists, in the given scope or in other fallback
+ * scopes.  The variable name is expanded once.
  */
 bool
 Var_ExistsExpand(GNode *scope, const char *name)
@@ -2122,12 +2126,12 @@ typedef enum ApplyModifierResult {
  * backslashes.
  */
 static bool
-IsEscapedModifierPart(const char *p, char end1, char end2,
+IsEscapedModifierPart(const char *p, char delim1, char delim2,
 		      struct ModifyWord_SubstArgs *subst)
 {
 	if (p[0] != '\\' || p[1] == '\0')
 		return false;
-	if (p[1] == end1 || p[1] == end2 || p[1] == '\\' || p[1] == '$')
+	if (p[1] == delim1 || p[1] == delim2 || p[1] == '\\' || p[1] == '$')
 		return true;
 	return p[1] == '&' && subst != NULL;
 }
@@ -2208,10 +2212,10 @@ ParseModifierPart(
      * For the first part of the ':S' modifier, set anchorEnd if the last
      * character of the pattern is a $.
      */
-    PatternFlags *out_pflags,
+    PatternFlags *pflags,
     /*
-     * For the second part of the ':S' modifier, allow ampersands to be
-     * escaped and replace unescaped ampersands with subst->lhs.
+     * For the second part of the ':S' modifier, allow '&' to be
+     * escaped and replace each unescaped '&' with subst->lhs.
      */
     struct ModifyWord_SubstArgs *subst
 )
@@ -2230,8 +2234,8 @@ ParseModifierPart(
 				LazyBuf_Add(part, *p);
 			p++;
 		} else if (p[1] == end2) {	/* Unescaped '$' at end */
-			if (out_pflags != NULL)
-				out_pflags->anchorEnd = true;
+			if (pflags != NULL)
+				pflags->anchorEnd = true;
 			else
 				LazyBuf_Add(part, *p);
 			p++;
@@ -3026,9 +3030,16 @@ ApplyModifier_Regex(const char **pp, ModChain *ch)
 	if (!ModChain_ShouldEval(ch))
 		goto done;
 
+	if (re.str[0] == '\0') {
+	    /* not all regcomp() fail on this */
+	    Parse_Error(PARSE_FATAL, "Regex compilation error: empty");
+	    goto re_err;
+	}
+
 	error = regcomp(&args.re, re.str, REG_EXTENDED);
 	if (error != 0) {
 		RegexError(error, &args.re, "Regex compilation error");
+	re_err:
 		LazyBuf_Done(&replaceBuf);
 		FStr_Done(&re);
 		return AMR_CLEANUP;
@@ -3790,6 +3801,44 @@ ApplyModifier_SunShell(const char **pp, ModChain *ch)
 	return AMR_OK;
 }
 
+/* :sh1 */
+static ApplyModifierResult
+ApplyModifier_SunShell1(const char **pp, ModChain *ch)
+{
+	Expr *expr = ch->expr;
+	const char *p = *pp;
+
+	if (!(p[1] == 'h' && p[2] == '1' && IsDelimiter(p[3], ch)))
+		return AMR_UNKNOWN;
+	*pp = p + 3;
+
+	if (Expr_ShouldEval(expr)) {
+		char *cache_varname;
+		Var *v;
+
+		cache_varname = str_concat2(".MAKE.SH1.", expr->name);
+		v = VarFind(cache_varname, SCOPE_GLOBAL, false);
+		if (v == NULL) {
+			char *output, *error;
+
+			output = Cmd_Exec(Expr_Str(expr), &error);
+			if (error != NULL) {
+				Parse_Error(PARSE_WARNING, "%s", error);
+				free(error);
+			}
+			Var_SetWithFlags(SCOPE_GLOBAL, cache_varname, output,
+			    VAR_SET_NO_EXPORT);
+			Expr_SetValueOwn(expr, output);
+		} else {
+			Expr_SetValueRefer(expr, v->val.data);
+		}
+		free(cache_varname);
+	}
+
+	return AMR_OK;
+}
+
+
 /*
  * In cases where the evaluation mode and the definedness are the "standard"
  * ones, don't log them, to keep the logs readable.
@@ -3903,6 +3952,8 @@ ApplyModifier(const char **pp, ModChain *ch)
 	case 'S':
 		return ApplyModifier_Subst(pp, ch);
 	case 's':
+		if ((*pp)[1] == 'h' && (*pp)[2] == '1')
+			return ApplyModifier_SunShell1(pp, ch);
 		return ApplyModifier_SunShell(pp, ch);
 	case 'T':
 		return ApplyModifier_WordFunc(pp, ch, ModifyWord_Tail);

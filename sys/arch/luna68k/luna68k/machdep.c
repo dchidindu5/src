@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.c,v 1.112 2024/03/05 14:15:32 thorpej Exp $ */
+/* $NetBSD: machdep.c,v 1.118 2025/12/20 10:51:03 skrll Exp $ */
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.112 2024/03/05 14:15:32 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.118 2025/12/20 10:51:03 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -110,7 +110,7 @@ int	maxmem;			/* max memory per process */
 
 extern	u_int lowram;
 
-void luna68k_init(void);
+void machine_init(paddr_t);
 void identifycpu(void);
 void dumpsys(void);
 
@@ -149,11 +149,29 @@ extern void ws_cnattach(void);
 int	cpuspeed = 25;		/* only used for printing later */
 int	delay_divisor = 30;	/* for delay() loop count */
 
+#ifdef __HAVE_NEW_PMAP_68K
+/*
+ * Clamp the kernel virtual address space to keep it out of the
+ * TT ranges we use for devices.
+ */
+const struct pmap_bootmap machine_bootmap[] = {
+	{ .pmbm_vaddr = LUNA68K_IO0_TT_BASE,
+	  .pmbm_size  = LUNA68K_IO0_TT_SIZE,
+	  .pmbm_flags = PMBM_F_KEEPOUT },
+
+	{ .pmbm_vaddr = LUNA68K_IO1_TT_BASE,
+	  .pmbm_size  = LUNA68K_IO1_TT_SIZE,
+	  .pmbm_flags = PMBM_F_KEEPOUT },
+
+	{ .pmbm_vaddr = -1 },
+};
+#endif
+
 /*
  * Early initialization, before main() is called.
  */
 void
-luna68k_init(void)
+machine_init(paddr_t nextpa)
 {
 	volatile uint8_t *pio0 = (void *)OBIO_PIO0_BASE;
 	int sw1, i;
@@ -172,7 +190,11 @@ luna68k_init(void)
 	/*
 	 * Tell the VM system about available physical memory.  The
 	 * luna68k only has one segment.
+	 *
+	 * Note: msgbuf is initialized just after avail_end below.
 	 */
+	avail_start = nextpa;
+	avail_end = m68k_ptob(maxmem) - m68k_round_page(MSGBUFSIZE);
 	uvm_page_physload(atop(avail_start), atop(avail_end),
 	    atop(avail_start), atop(avail_end), VM_FREELIST_DEFAULT);
 
@@ -466,9 +488,9 @@ haltsys:
 	}
 	if (howto & RB_HALT) {
 		printf("System halted.	Hit any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -485,61 +507,11 @@ haltsys:
 void
 cpu_init_kcore_hdr(void)
 {
-	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
-	struct m68k_kcore_hdr *m = &h->un._m68k;
+	phys_ram_seg_t *ram_segs = pmap_init_kcore_hdr(&cpu_kcore_hdr);
 
-	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr));
-
-	/*
-	 * Initialize the `dispatcher' portion of the header.
-	 */
-	strcpy(h->name, machine);
-	h->page_size = PAGE_SIZE;
-	h->kernbase = KERNBASE;
-
-	/*
-	 * Fill in information about our MMU configuration.
-	 */
-	m->mmutype	= mmutype;
-	m->sg_v		= SG_V;
-	m->sg_frame	= SG_FRAME;
-	m->sg_ishift	= SG_ISHIFT;
-	m->sg_pmask	= SG_PMASK;
-	m->sg40_shift1	= SG4_SHIFT1;
-	m->sg40_mask2	= SG4_MASK2;
-	m->sg40_shift2	= SG4_SHIFT2;
-	m->sg40_mask3	= SG4_MASK3;
-	m->sg40_shift3	= SG4_SHIFT3;
-	m->sg40_addr1	= SG4_ADDR1;
-	m->sg40_addr2	= SG4_ADDR2;
-	m->pg_v		= PG_V;
-	m->pg_frame	= PG_FRAME;
-
-	/*
-	 * Initialize pointer to kernel segment table.
-	 */
-	m->sysseg_pa = (uint32_t)(pmap_kernel()->pm_stpa);
-
-	/*
-	 * Initialize relocation value such that:
-	 *
-	 *	pa = (va - KERNBASE) + reloc
-	 *
-	 * Since we're linked and loaded at the same place,
-	 * and the kernel is mapped va == pa, this is 0.
-	 */
-	m->reloc = 0;
-
-	/*
-	 * Define the end of the relocatable range.
-	 */
-	m->relocend = (uint32_t)end;
-
-	/*
-	 * The luna68k has one contiguous memory segment.
-	 */
-	m->ram_segs[0].start = 0 /* lowram */;
-	m->ram_segs[0].size  = ctob(physmem);
+	/* The luna68k has one contiguous memory segment. */
+	ram_segs[0].start = 0 /* lowram */;
+	ram_segs[0].size  = ctob(physmem);
 }
 
 /*

@@ -1,4 +1,4 @@
-/*	$NetBSD: db_command.c,v 1.190 2023/11/02 10:31:55 martin Exp $	*/
+/*	$NetBSD: db_command.c,v 1.193 2025/12/22 07:51:07 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 1999, 2002, 2009, 2019
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.190 2023/11/02 10:31:55 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.193 2025/12/22 07:51:07 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_aio.h"
@@ -579,7 +579,7 @@ db_unregister_tbl(uint8_t type,const struct db_command *cmd_tbl)
 }
 
 #ifndef _KERNEL
-#define	cnpollc(c)	__nothing
+#define	cnpollc(on)	__nothing
 #endif
 
 /*
@@ -600,8 +600,10 @@ db_command_loop(void)
 
 	db_cmd_loop_done = false;
 
-	/* Init default command tables add machine, base,
-	   show command tables to the list */
+	/*
+	 * Init default command tables add machine, base,
+	 * show command tables to the list.
+	 */
 	db_init_commands();
 
 	/* save context for return from ddb */
@@ -623,9 +625,9 @@ db_command_loop(void)
 		if (db_print_position() != 0)
 			db_printf("\n");
 		db_output_line = 0;
-		cnpollc(1);
+		cnpollc(true);
 		(void) db_read_line();
-		cnpollc(0);
+		cnpollc(false);
 		db_command(&db_last_command);
 	}
 

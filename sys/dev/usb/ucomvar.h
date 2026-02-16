@@ -1,4 +1,4 @@
-/*	$NetBSD: ucomvar.h,v 1.26 2025/10/11 12:58:06 skrll Exp $	*/
+/*	$NetBSD: ucomvar.h,v 1.28 2025/12/13 10:20:20 kre Exp $	*/
 
 /*
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -35,6 +35,7 @@
 #define UCOM_UNK_PORTNO (-1)
 
 struct	ucom_softc;
+struct	termios;
 
 /*
  * USB detach requires ensuring that outstanding operations and
@@ -164,3 +165,4 @@ struct ucom_attach_args {
 int ucomprint(void *, const char *);
 int ucomsubmatch(device_t t, cfdata_t, const int *, void *);
 void ucom_status_change(struct ucom_softc *);
+int ucom_cnattach(int, int);

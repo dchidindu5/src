@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_motorola.h,v 1.43 2023/12/31 21:59:24 thorpej Exp $	*/
+/*	$NetBSD: pmap_motorola.h,v 1.50 2025/11/17 05:59:51 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -79,6 +79,9 @@
 #ifdef _KERNEL_OPT
 #include "opt_m68k_arch.h"
 #endif
+
+#include <sys/kcore.h>
+#include <m68k/kcore.h>
 
 #include <machine/cpu.h>
 #include <machine/pte.h>
@@ -223,14 +226,9 @@ extern st_entry_t	*Sysseg;
 extern pt_entry_t	*Sysmap, *Sysptmap;
 #define	SYSMAP_VA	VM_MAX_KERNEL_ADDRESS
 extern vsize_t		Sysptsize;
-extern vsize_t		mem_size;
 extern vaddr_t		virtual_avail, virtual_end;
-extern u_int		protection_codes[];
 #if defined(M68040) || defined(M68060)
 extern u_int		protostfree;
-#endif
-#ifdef CACHE_HAVE_VAC
-extern u_int		pmap_aliasmask;
 #endif
 
 extern char		*vmmap;		/* map for mem, dumps, etc. */
@@ -239,13 +237,13 @@ extern void		*msgbufaddr;
 
 /* for lwp0 uarea initialization after MMU enabled */
 extern vaddr_t		lwp0uarea;
-void	pmap_bootstrap_finalize(void);
+void *	pmap_bootstrap2(void);
 
-vaddr_t	pmap_map(vaddr_t, paddr_t, paddr_t, int);
 void	pmap_procwr(struct proc *, vaddr_t, size_t);
 #define	PMAP_NEED_PROCWR
 
 #ifdef CACHE_HAVE_VAC
+void	pmap_init_vac(size_t);
 void	pmap_prefer(vaddr_t, vaddr_t *);
 #define	PMAP_PREFER(foff, vap, sz, td)	pmap_prefer((foff), (vap))
 #endif
@@ -254,6 +252,13 @@ void	_pmap_set_page_cacheable(struct pmap *, vaddr_t);
 void	_pmap_set_page_cacheinhibit(struct pmap *, vaddr_t);
 int	_pmap_page_is_cacheable(struct pmap *, vaddr_t);
 
+phys_ram_seg_t *pmap_init_kcore_hdr(cpu_kcore_hdr_t *);
+
 paddr_t	vtophys(vaddr_t va);
+
+/* Copy definitions from new pmap_68k.h to ease transition. */
+#define	PMBM_F_VAONLY	__BIT(0)
+#define	PMBM_F_KEEPOUT	__BIT(1)
+#define	PMBM_F_CI	__BIT(2)	/* cache-inhibited mapping */
 
 #endif /* !_M68K_PMAP_MOTOROLA_H_ */

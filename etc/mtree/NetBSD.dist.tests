@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.211 2025/10/06 13:16:43 riastradh Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.216 2026/01/30 09:01:07 wiz Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -219,6 +219,7 @@
 ./usr/tests/compat/linux
 ./usr/tests/crypto
 ./usr/tests/crypto/libcrypto
+./usr/tests/crypto/libcrypto/store
 ./usr/tests/crypto/opencrypto
 ./usr/tests/dev
 ./usr/tests/dev/audio
@@ -450,6 +451,7 @@
 ./usr/tests/usr.bin/compress
 ./usr/tests/usr.bin/cut
 ./usr/tests/usr.bin/diff
+./usr/tests/usr.bin/diff3
 ./usr/tests/usr.bin/dirname
 ./usr/tests/usr.bin/error
 ./usr/tests/usr.bin/find
@@ -472,7 +474,10 @@
 ./usr/tests/usr.bin/mkdep
 ./usr/tests/usr.bin/mtree
 ./usr/tests/usr.bin/nbperf
+./usr/tests/usr.bin/netpgpkeys
+./usr/tests/usr.bin/netpgpkeys/data
 ./usr/tests/usr.bin/netpgpverify
+./usr/tests/usr.bin/netpgpverify/data
 ./usr/tests/usr.bin/patch
 ./usr/tests/usr.bin/pkill
 ./usr/tests/usr.bin/pr

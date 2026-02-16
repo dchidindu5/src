@@ -767,6 +767,9 @@ npfctl_print_nat(npf_conf_info_t *ctx, nl_nat_t *nt)
 	case NPF_ALGO_NPT66:
 		algo = "algo npt66 ";
 		break;
+	case NPF_ALGO_NAT64:
+		algo = "algo nat64 ";
+		break;
 	default:
 		algo = "";
 		break;

@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.421 2025/09/18 18:22:17 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.425 2026/02/03 20:41:38 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: decl.c,v 1.421 2025/09/18 18:22:17 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.425 2026/02/03 20:41:38 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -232,9 +232,7 @@ merge_signedness(tspec_t t, tspec_t s)
 	    : t == INT ? UINT
 	    : t == LONG ? ULONG
 	    : t == LLONG ? ULLONG
-#ifdef INT128_SIZE
 	    : t == INT128 ? UINT128
-#endif
 	    : t;
 }
 
@@ -354,11 +352,8 @@ dcs_add_type(type_t *tp)
 			t = FCOMPLEX;
 		else if (dcs->d_complex_mod == DOUBLE)
 			t = DCOMPLEX;
-		else {
-			/* invalid type for _Complex */
-			error(308);
-			t = DCOMPLEX;	/* just as a fallback */
-		}
+		else if (dcs->d_abstract_type == NO_TSPEC)
+			t = COMPLEX;
 		dcs->d_complex_mod = NO_TSPEC;
 	}
 
@@ -382,11 +377,7 @@ dcs_add_type(type_t *tp)
 		if (dcs->d_sign_mod != NO_TSPEC)
 			dcs->d_invalid_type_combination = true;
 		dcs->d_sign_mod = t;
-#ifdef INT128_SIZE
 	} else if (t == SHORT || t == LONG || t == LLONG || t == INT128) {
-#else
-	} else if (t == SHORT || t == LONG || t == LLONG) {
-#endif
 		if (dcs->d_rank_mod != NO_TSPEC)
 			dcs->d_invalid_type_combination = true;
 		dcs->d_rank_mod = t;
@@ -401,9 +392,11 @@ dcs_add_type(type_t *tp)
 				dcs->d_invalid_type_combination = true;
 			dcs->d_abstract_type = t;
 		}
-	} else if (t == PTR) {
+	} else if (t == PTR)
 		dcs->d_type = tp;
-	} else {
+	else if (t == COMPLEX && dcs->d_abstract_type == NO_TSPEC)
+		dcs->d_abstract_type = t;
+	else {
 		if (dcs->d_abstract_type != NO_TSPEC)
 			dcs->d_invalid_type_combination = true;
 		dcs->d_abstract_type = t;
@@ -472,11 +465,11 @@ pack_struct_or_union(type_t *tp)
 }
 
 void
-dcs_add_alignas(tnode_t *tn)
+dcs_add_alignas(unsigned int al)
 {
-	dcs->d_mem_align = to_int_constant(tn, true);
-	if (dcs->d_type != NULL && is_struct_or_union(dcs->d_type->t_tspec))
-		// FIXME: The type must not be modified.
+	dcs->d_mem_align = al;
+	if (dcs->d_type != NULL && is_struct_or_union(dcs->d_type->t_tspec)
+	    && !dcs->d_finished)
 		dcs->d_type->u.sou->sou_align = dcs->d_mem_align;
 	debug_func_dcs(__func__);
 }
@@ -517,14 +510,8 @@ dcs_add_type_attributes(type_attributes attrs)
 		dcs_set_used();
 	if (attrs.noreturn)
 		dcs->d_noreturn = true;
-	if (attrs.bit_width == 128) {
-#ifdef INT128_SIZE
+	if (attrs.bit_width == 128)
 		dcs->d_rank_mod = INT128;
-#else
-		/* Get as close as possible. */
-		dcs->d_rank_mod = LLONG;
-#endif
-	}
 	if (attrs.bit_width == 64)
 		dcs->d_rank_mod = LLONG;
 }
@@ -663,6 +650,7 @@ dcs_begin_type(void)
 	// keep d_first_dlsym
 	// keep d_last_dlsym
 	dcs->d_func_proto_syms = NULL;
+	dcs->d_finished = false;
 	// keep d_enclosing
 
 	debug_func_dcs(__func__);
@@ -735,6 +723,17 @@ dcs_merge_declaration_specifiers(void)
 	if (t == LDOUBLE && !allow_c90)
 		/* 'long double' requires C90 or later */
 		warning(266);
+	if (t == COMPLEX && c == FLOAT)
+		t = FCOMPLEX;
+	else if (t == COMPLEX && c == DOUBLE)
+		t = DCOMPLEX;
+	else if (t == COMPLEX && c == LDOUBLE)
+		t = LCOMPLEX;
+	else if (t == COMPLEX) {
+		/* invalid type for _Complex */
+		error(308);
+		t = DCOMPLEX;
+	}
 	if (l == LONG && t == DCOMPLEX) {
 		l = NO_TSPEC;
 		t = LCOMPLEX;
@@ -796,6 +795,7 @@ dcs_end_type(void)
 		    & -align_in_bits;
 	}
 
+	dcs->d_finished = true;
 	debug_dcs();
 	debug_leave();
 }

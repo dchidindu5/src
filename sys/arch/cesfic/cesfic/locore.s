@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.46 2024/01/17 12:33:49 thorpej Exp $	*/
+/*	$NetBSD: locore.s,v 1.52 2025/12/04 02:55:23 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1980, 1990, 1993
@@ -213,11 +213,6 @@ Lis68020:
 
 Lstart1:
 
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
-
 /* initialize memory size (for pmap_bootstrap) */
 	movl	0x5c00ac00, %d0
 	andb	#0x60, %d0
@@ -245,14 +240,12 @@ Lmemok:
 	.globl	_Sysseg_pa, _pmap_bootstrap, _avail_start
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	RELOC(esym,%a0)			| end of static kernel test/data/syms
-	movl	%a0@,%d5
+	movl	%a0@,%a4
+	tstl	%a4
 	jne	Lstart2
 #endif
-	movl	#_C_LABEL(end),%d5	| end of static kernel text/data
+	movl	#_C_LABEL(end),%a4	| end of static kernel text/data
 Lstart2:
-	addl	#PAGE_SIZE-1,%d5
-	andl	#PG_FRAME,%d5		| round to a page
-	movl	%d5,%a4
 	addl	%a5,%a4			| convert to PA
 	subl	#KERNBASE, %a4
 	pea	%a5@			| firstpa
@@ -328,19 +321,18 @@ Lenab1:
 
 	lea	_ASM_LABEL(tmpstk),%sp	| re-load temporary stack
 	jbsr	_C_LABEL(vec_init)	| initialize vector table
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
 
 	tstl	_C_LABEL(fputype)	| Have an FPU?
 	jeq	Lenab2			| No, skip.
-	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(m68881_restore)   | restore it (does not kill a1)
+	clrl	%a0@(PCB_FPCTX)		| ensure null FP context
+	pea	%a0@(PCB_FPCTX)
+	jbsr	_C_LABEL(m68881_restore)   | restore it (does not kill %a0)
 	addql	#4,%sp
 Lenab2:
 

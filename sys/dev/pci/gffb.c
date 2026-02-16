@@ -1,4 +1,4 @@
-/*	$NetBSD: gffb.c,v 1.29 2025/10/14 05:40:35 macallan Exp $	*/
+/*	$NetBSD: gffb.c,v 1.31 2025/11/09 08:19:50 macallan Exp $	*/
 
 /*
  * Copyright (c) 2013 Michael Lorenz
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.29 2025/10/14 05:40:35 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gffb.c,v 1.31 2025/11/09 08:19:50 macallan Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1191,7 +1191,6 @@ gffb_init(struct gffb_softc *sc)
 	GFFB_WRITE_4(GFFB_PMC + 0x890C, sc->sc_vramsize - 1);
 	GFFB_WRITE_4(GFFB_PMC + 0x1588, 0);
 
-	__asm("eieio; sync;");
 	GFFB_WRITE_4(GFFB_FIFO_GET, 0);
 	GFFB_WRITE_4(GFFB_CMDSTART, 0x00000002);
 	sc->sc_put = 0;

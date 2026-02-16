@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.695 2025/09/17 19:25:22 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.702 2026/01/17 16:22:35 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID)
-__RCSID("$NetBSD: tree.c,v 1.695 2025/09/17 19:25:22 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.702 2026/01/17 16:22:35 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -507,6 +507,58 @@ ic_cvt(const type_t *ntp, const type_t *otp, integer_constraints a)
 }
 
 static integer_constraints
+ic_unsigned_range(uint64_t minimum, uint64_t maximum)
+{
+	integer_constraints c;
+	lint_assert(minimum <= maximum);
+	c.smin = maximum <= INT64_MAX ? (int64_t)minimum : INT64_MIN;
+	c.smax = maximum <= INT64_MAX ? (int64_t)maximum : INT64_MAX;
+	c.umin = minimum;
+	c.umax = maximum;
+	c.bclr = ~c.umax;
+	return c;
+}
+
+static integer_constraints
+ic_signed_range(int64_t minimum, int64_t maximum)
+{
+	integer_constraints c;
+	lint_assert(minimum <= maximum);
+	c.smin = minimum;
+	c.smax = maximum;
+	c.umin = minimum >= 0 ? (uint64_t)minimum : 0;
+	c.umax = minimum >= 0 ? (uint64_t)maximum : UINT64_MAX;
+	c.bclr = ~c.umax;
+	return c;
+}
+
+static integer_constraints
+ic_call(const function_call *call)
+{
+	if (!(call->func->tn_op == ADDR
+	    && call->func->u.ops.left->tn_op == NAME))
+		goto any;
+
+	const char *name = call->func->u.ops.left->u.sym->s_name;
+
+	if (strcmp(name, "strlen") == 0
+	    || strcmp(name, "strcspn") == 0
+	    || strcmp(name, "strspn") == 0
+	    || strcmp(name, "strlcpy") == 0
+	    || strcmp(name, "strlcat") == 0)
+		return ic_unsigned_range(0, INT_MAX - 1);
+	if ((strcmp(name, "read") == 0 || strcmp(name, "write") == 0)
+	    && call->args_len == 3
+	    && call->args[2]->tn_op == CON
+	    && is_uinteger(call->args[2]->tn_type->t_tspec)
+	    && call->args[2]->u.value.u.integer >= 0)
+		return ic_signed_range(-1, call->args[2]->u.value.u.integer);
+
+any:
+	return ic_any(call->func->tn_type->t_subt->t_subt);
+}
+
+static integer_constraints
 ic_expr(const tnode_t *tn)
 {
 	integer_constraints lc, rc;
@@ -567,6 +619,8 @@ ic_expr(const tnode_t *tn)
 			return ic_any(tn->tn_type);
 		lc = ic_expr(tn->u.ops.left);
 		return ic_cvt(tn->tn_type, tn->u.ops.left->tn_type, lc);
+	case CALL:
+		return ic_call(tn->u.call);
 	default:
 		return ic_any(tn->tn_type);
 	}
@@ -854,16 +908,28 @@ build_string(buffer *lit)
 	return n;
 }
 
+static tnode_t *
+unconst_tnode(const tnode_t *p)
+{
+	void *r;
+
+	memcpy(&r, &p, sizeof(r));
+	return r;
+}
+
 tnode_t *
 build_generic_selection(const tnode_t *expr,
 			struct generic_association *sel)
 {
 	tnode_t *default_result = NULL;
 
+	if (expr != NULL)
+		expr = cconv(unconst_tnode(expr));	/* C23 6.5.2.1p2 */
+
 	for (; sel != NULL; sel = sel->ga_prev) {
 		if (expr != NULL &&
 		    types_compatible(sel->ga_arg, expr->tn_type,
-			false, false, NULL))
+			true, false, NULL))
 			return sel->ga_result;
 		if (sel->ga_arg == NULL)
 			default_result = sel->ga_result;
@@ -964,9 +1030,7 @@ check_integer_comparison(op_t op, tnode_t *ln, tnode_t *rn)
 
 static const tspec_t arith_rank[] = {
 	LDOUBLE, DOUBLE, FLOAT,
-#ifdef INT128_SIZE
 	UINT128, INT128,
-#endif
 	ULLONG, LLONG,
 	ULONG, LONG,
 	UINT, INT,
@@ -3732,9 +3796,7 @@ should_warn_about_integer_conversion(const type_t *ntp, tspec_t nt,
 	if (aflag > 0 && portable_rank_cmp(nt, ot) < 0) {
 		if (ot == LONG || ot == ULONG
 		    || ot == LLONG || ot == ULLONG
-#ifdef INT128_SIZE
 		    || ot == INT128 || ot == UINT128
-#endif
 		    || aflag > 1)
 			return !can_represent(ntp, otn);
 	}

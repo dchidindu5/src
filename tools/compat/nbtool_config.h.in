@@ -1,6 +1,6 @@
 /* nbtool_config.h.in.  Generated from configure.ac by autoheader.  */
 
-/*      $NetBSD: nbtool_config.h.in,v 1.61 2025/09/18 20:25:12 christos Exp $    */
+/*      $NetBSD: nbtool_config.h.in,v 1.63 2026/01/11 19:51:18 nia Exp $    */
  
 #ifndef __NETBSD_NBTOOL_CONFIG_H__
 #define __NETBSD_NBTOOL_CONFIG_H__
@@ -40,6 +40,9 @@
 
 /* Define to 1 if you have the <ctype.h> header file. */
 #undef HAVE_CTYPE_H
+
+/* Define to 1 if the system has the type 'daddr_t'. */
+#undef HAVE_DADDR_T
 
 /* Define to 1 if you have the declaration of 'asnprintf', and to 0 if you
    don't. */
@@ -243,6 +246,10 @@
 /* Define to 1 if you have the declaration of 'le64toh', and to 0 if you
    don't. */
 #undef HAVE_DECL_LE64TOH
+
+/* Define to 1 if you have the declaration of 'mempcpy', and to 0 if you
+   don't. */
+#undef HAVE_DECL_MEMPCPY
 
 /* Define to 1 if you have the declaration of 'mi_vector_hash', and to 0 if
    you don't. */
@@ -457,6 +464,9 @@
 /* Define to 1 if you have the 'dprintf' function. */
 #undef HAVE_DPRINTF
 
+/* Define to 1 if you have the <endian.h> header file. */
+#undef HAVE_ENDIAN_H
+
 /* Define if you have the enum uio_rw type. */
 #undef HAVE_ENUM_UIO_RW
 
@@ -570,6 +580,9 @@
 
 /* Define to 1 if you have the <malloc.h> header file. */
 #undef HAVE_MALLOC_H
+
+/* Define to 1 if you have the 'mempcpy' function. */
+#undef HAVE_MEMPCPY
 
 /* Define to 1 if you have the 'mkdtemp' function. */
 #undef HAVE_MKDTEMP

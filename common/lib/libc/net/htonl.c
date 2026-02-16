@@ -1,4 +1,4 @@
-/*	$NetBSD: htonl.c,v 1.3 2012/03/21 20:02:56 he Exp $	*/
+/*	$NetBSD: htonl.c,v 1.5 2026/01/09 08:02:09 skrll Exp $	*/
 
 /*
  * Written by J.T. Conklin <jtc@NetBSD.org>.
@@ -7,14 +7,15 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: htonl.c,v 1.3 2012/03/21 20:02:56 he Exp $");
+__RCSID("$NetBSD: htonl.c,v 1.5 2026/01/09 08:02:09 skrll Exp $");
 #endif
 
 #include <sys/types.h>
+#include <sys/endian.h>
 
 #undef htonl
 
-uint32_t 
+uint32_t
 htonl(uint32_t x)
 {
 #if BYTE_ORDER == LITTLE_ENDIAN

@@ -1,4 +1,4 @@
-/*	$NetBSD: sshkey.h,v 1.23 2025/10/11 15:45:08 christos Exp $	*/
+/*	$NetBSD: sshkey.h,v 1.25 2025/12/28 09:54:07 nia Exp $	*/
 /* $OpenBSD: sshkey.h,v 1.70 2025/08/29 03:50:38 djm Exp $ */
 
 /*

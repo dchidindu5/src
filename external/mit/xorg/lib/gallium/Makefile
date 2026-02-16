@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.61 2025/09/25 05:11:25 mrg Exp $
+# $NetBSD: Makefile,v 1.64 2025/11/15 06:53:16 mrg Exp $
 
 # Link the gallium mega driver.
 
@@ -1176,15 +1176,8 @@ LDFLAGS+=	-pthread
 LIBDPLIBS+=	X11-xcb         ${.CURDIR}/../libX11/libX11-xcb
 LIBDPLIBS+=	xcb-dri2        ${.CURDIR}/../libxcb/dri2
 LIBDPLIBS+=	xcb		${.CURDIR}/../libxcb/libxcb
-.if ${BUILD_RADEON} == 1 || ${BUILD_NOUVEAU} == 1
 LIBDPLIBS+= 	drm		${.CURDIR}/../libdrm
-.if ${BUILD_I915} == 1
-LIBDPLIBS+= 	drm_intel	${.CURDIR}/../libdrm_intel
-.endif
-.if ${BUILD_IRIS} == 1
-LIBDPLIBS+= 	drm_intel	${.CURDIR}/../libdrm_intel
-.endif
-.if ${BUILD_CROCUS} == 1
+.if ${BUILD_I915} == 1 || ${BUILD_IRIS} == 1 || ${BUILD_CROCUS} == 1
 LIBDPLIBS+= 	drm_intel	${.CURDIR}/../libdrm_intel
 .endif
 .if ${BUILD_RADEON} == 1
@@ -1194,7 +1187,6 @@ LIBDPLIBS+= 	drm_amdgpu	${.CURDIR}/../libdrm_amdgpu
 .if ${BUILD_NOUVEAU} == 1
 LIBDPLIBS+= 	drm_nouveau	${.CURDIR}/../libdrm_nouveau
 .endif	# ${BUILD_NOUVEAU} == 1
-.endif	# ${BUILD_RADEON} == 1 || ${BUILD_NOUVEAU} == 1
 LIBDPLIBS+= 	glapi		${.CURDIR}/../libglapi${OLD_SUFFIX}
 LIBDPLIBS+=	expat		${.CURDIR}/../../../../../external/mit/expat/lib/libexpat
 LIBDPLIBS+=	terminfo	${.CURDIR}/../../../../../lib/libterminfo
@@ -1457,6 +1449,14 @@ COPTS.nir_lower_int64.c+=	-O0
 
 .if ${MACHINE_CPU} == "m68k" && ${HAVE_GCC:U0} == 12
 COPTS.vl_bicubic_filter.c+=	-O1
+.endif
+
+.if ${MACHINE_CPU} == "m68k" && ${HAVE_GCC:U0} >= 12
+COPTS.format_utils.c+=	-Os
+COPTS.glsl_lexer.cpp+=	-O1 -fno-jump-tables
+.endif
+.if ${MACHINE_CPU} == "m68k" && ${HAVE_GCC:U0} >= 14
+COPTS.glsl_parser.cpp+=	-Os
 .endif
 
 .include <bsd.lib.mk>

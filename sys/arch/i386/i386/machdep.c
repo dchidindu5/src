@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.849 2025/05/05 16:57:41 imil Exp $	*/
+/*	$NetBSD: machdep.c,v 1.851 2025/12/21 07:00:27 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.849 2025/05/05 16:57:41 imil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.851 2025/12/21 07:00:27 skrll Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -818,7 +818,7 @@ haltsys:
 		}
 #endif
 
-		cnpollc(1);	/* for proper keyboard command handling */
+		cnpollc(true);	/* for proper keyboard command handling */
 		if (cngetc() == 0) {
 			/* no console attached, so just hlt */
 			printf("No keyboard - cannot reboot after all.\n");
@@ -826,7 +826,7 @@ haltsys:
 				x86_hlt();
 			}
 		}
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -1428,7 +1428,7 @@ init386(paddr_t first_avail)
 	for (x = 0; x < 32; x++) {
 		/* Reset to default. Special cases below */
 		int sel;
-#ifdef XENPV		
+#ifdef XENPV
 		sel = SEL_XEN;
 #else
 		sel = SEL_KPL;
@@ -1491,7 +1491,7 @@ init386(paddr_t first_avail)
 #endif /* XENPV */
 
 #if NMCA > 0
-	/* 
+	/*
 	 * check for MCA bus, needed to be done before ISA stuff - if
 	 * MCA is detected, ISA needs to use level triggered interrupts
 	 * by default

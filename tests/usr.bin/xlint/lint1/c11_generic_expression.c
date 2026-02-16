@@ -1,4 +1,4 @@
-/*	$NetBSD: c11_generic_expression.c,v 1.19 2023/08/06 19:44:50 rillig Exp $	*/
+/*	$NetBSD: c11_generic_expression.c,v 1.23 2026/01/10 08:42:48 rillig Exp $	*/
 # 3 "c11_generic_expression.c"
 
 /* lint1-extra-flags: -X 351 */
@@ -108,3 +108,31 @@ const char *x = _Generic(
     1ULL + 1.0f,
     int: 1
 );
+
+// Introduced by C11 6.5.2.1.
+// Fixed by C23 6.5.2.1.
+void
+type_conversions(const char *str)
+{
+	int array[4] = { 0, 1, 2, 3 };
+
+	// Type qualifiers are removed in lvalues.
+	x = _Generic(*str,
+		char: str,
+		default: primary_expression
+	);
+	// Type qualifiers are ignored in rvalues.
+	x = _Generic(((const unsigned char)str[2]),
+		unsigned char: str
+	);
+	// Functions are converted to a function pointer.
+	x = _Generic(type_conversions,
+		void(*)(const char *): str,
+		default: primary_expression
+	);
+	// Arrays are converted to the corresponding pointer.
+	x = _Generic(array,
+		int *: str,
+		default: primary_expression
+	);
+}

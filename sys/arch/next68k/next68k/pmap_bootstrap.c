@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_bootstrap.c,v 1.47 2023/02/11 02:31:34 tsutsui Exp $	*/
+/*	$NetBSD: pmap_bootstrap.c,v 1.56 2025/11/30 20:09:18 thorpej Exp $	*/
 
 /*
  * This file was taken from mvme68k/mvme68k/pmap_bootstrap.c
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap_bootstrap.c,v 1.47 2023/02/11 02:31:34 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_bootstrap.c,v 1.56 2025/11/30 20:09:18 thorpej Exp $");
 
 #include "opt_m68k_arch.h"
 
@@ -65,11 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_bootstrap.c,v 1.47 2023/02/11 02:31:34 tsutsui 
 
 extern char *etext;
 
-extern int maxmem;
-extern paddr_t avail_start, avail_end;
-extern phys_ram_seg_t mem_clusters[];
-extern int mem_cluster_cnt;
-extern paddr_t msgbufpa;
+extern vaddr_t kernel_reloc_offset;
 
 /*
  * Special purpose kernel virtual addresses, used for mapping
@@ -83,7 +79,7 @@ void *CADDR1, *CADDR2;
 char *vmmap;
 void *msgbufaddr;
 
-void pmap_bootstrap(paddr_t, paddr_t);
+paddr_t pmap_bootstrap1(paddr_t, paddr_t);
 
 /*
  * Bootstrap the VM system.
@@ -96,55 +92,20 @@ void pmap_bootstrap(paddr_t, paddr_t);
  * XXX assumes sizeof(u_int) == sizeof(pt_entry_t)
  * XXX a PIC compiler would make this much easier.
  */
-void
-pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
+paddr_t
+pmap_bootstrap1(paddr_t nextpa, paddr_t firstpa)
 {
 	paddr_t lwp0upa, kstpa, kptmpa, kptpa;
 	u_int nptpages, kstsize;
 	st_entry_t protoste, *ste, *este;
 	pt_entry_t protopte, *pte, *epte;
-	psize_t size;
 	int i;
 #if defined(M68040) || defined(M68060)
 	u_int stfree = 0;	/* XXX: gcc -Wuninitialized */
 #endif
 	u_int fbmapsize;
 
-	/*
-	 * Initialize the mem_clusters[] array for the crash dump
-	 * code.  While we're at it, compute the total amount of
-	 * physical memory in the system.
-	 */
-	for (i = 0; i < VM_PHYSSEG_MAX; i++) {
-		if (RELOC(phys_seg_list[i].ps_start, paddr_t) ==
-		    RELOC(phys_seg_list[i].ps_end, paddr_t)) {
-			/*
-			 * No more memory.
-			 */
-			break;
-		}
-
-		/*
-		 * Make sure these are properly rounded.
-		 */
-		RELOC(phys_seg_list[i].ps_start, paddr_t) =
-		    m68k_round_page(RELOC(phys_seg_list[i].ps_start,
-					  paddr_t));
-		RELOC(phys_seg_list[i].ps_end, paddr_t) =
-		    m68k_trunc_page(RELOC(phys_seg_list[i].ps_end,
-					  paddr_t));
-
-		size = RELOC(phys_seg_list[i].ps_end, paddr_t) -
-		    RELOC(phys_seg_list[i].ps_start, paddr_t);
-
-		RELOC(mem_clusters[i].start, u_quad_t) =
-		    RELOC(phys_seg_list[i].ps_start, paddr_t);
-		RELOC(mem_clusters[i].size, u_quad_t) = size;
-
-		RELOC(physmem, int) += size >> PGSHIFT;
-
-		RELOC(mem_cluster_cnt, int) += 1;
-	}
+	nextpa = m68k_round_page(nextpa);
 
 	/*
 	 * Calculate important physical addresses:
@@ -166,6 +127,8 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	 * The KVA corresponding to any of these PAs is:
 	 *	(PA - firstpa + KERNBASE).
 	 */
+	RELOC(kernel_reloc_offset, vaddr_t) = firstpa;
+
 	lwp0upa = nextpa;
 	nextpa += USPACE;
 #if defined(M68040) || defined(M68060)
@@ -180,8 +143,9 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	nextpa += PAGE_SIZE;
 	kptpa = nextpa;
 	fbmapsize = btoc(RELOC(fblimitpa, paddr_t) - RELOC(fbbasepa, paddr_t));
-	nptpages = RELOC(Sysptsize, int) + howmany(RELOC(physmem, int), NPTEPG)
-	    + (IIOMAPSIZE + fbmapsize + NPTEPG - 1) / NPTEPG;
+	nptpages = RELOC(Sysptsize, int) +
+	    howmany(RELOC(physmem, psize_t), NPTEPG) +
+	    (IIOMAPSIZE + fbmapsize + NPTEPG - 1) / NPTEPG;
 	nextpa += nptpages * PAGE_SIZE;
 
 	/*
@@ -419,7 +383,6 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	protopte = INTIOBASE | PG_RW | PG_CI | PG_U | PG_M | PG_V;
 	epte = &pte[IIOMAPSIZE];
 	RELOC(intiobase, vaddr_t) = PTE2VA(pte);
-	RELOC(intiolimit, vaddr_t) = PTE2VA(epte);
 	while (pte < epte) {
 		*pte++ = protopte;
 		protopte += PAGE_SIZE;
@@ -463,47 +426,9 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 
 	/*
 	 * Remember the u-area address so it can be loaded in the lwp0
-	 * via uvm_lwp_setuarea() later in pmap_bootstrap_finalize().
+	 * via uvm_lwp_setuarea() later in pmap_bootstrap2().
 	 */
 	RELOC(lwp0uarea, vaddr_t) = lwp0upa - firstpa;
-
-	/*
-	 * Scoot the start of available on-board RAM forward to
-	 * account for:
-	 *
-	 *	(1) The bootstrap programs in low memory (so
-	 *	    that we can jump back to them without
-	 *	    reloading).
-	 *
-	 *	(2) The kernel text, data, and bss.
-	 *
-	 *	(3) The pages we stole above for pmap data
-	 *	    structures.
-	 */
-	RELOC(phys_seg_list[0].ps_start, paddr_t) = nextpa;
-
-	/*
-	 * Reserve space at the end of on-board RAM for the message
-	 * buffer.  We force it into on-board RAM because VME RAM
-	 * gets cleared very early on in locore.s (to initialise
-	 * parity on boards that need it). This would clobber the
-	 * messages from a previous running NetBSD system.
-	 */
-	RELOC(phys_seg_list[0].ps_end, paddr_t) -=
-	    m68k_round_page(MSGBUFSIZE);
-	RELOC(msgbufpa, paddr_t) =
-	    RELOC(phys_seg_list[0].ps_end, paddr_t);
-
-	/*
-	 * Initialize avail_start and avail_end.
-	 */
-	i = RELOC(mem_cluster_cnt, int) - 1;
-	RELOC(avail_start, paddr_t) =
-	    RELOC(phys_seg_list[0].ps_start, paddr_t);
-	RELOC(avail_end, paddr_t) =
-	    RELOC(phys_seg_list[i].ps_end, paddr_t);
-
-	RELOC(mem_size, vsize_t) = m68k_ptob(RELOC(physmem, int));
 
 	RELOC(virtual_end, vaddr_t) = VM_MAX_KERNEL_ADDRESS;
 
@@ -523,4 +448,6 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 		va += m68k_round_page(MSGBUFSIZE);
 		RELOC(virtual_avail, vaddr_t) = va;
 	}
+
+	return nextpa;
 }

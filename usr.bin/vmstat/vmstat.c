@@ -1,4 +1,4 @@
-/* $NetBSD: vmstat.c,v 1.262 2025/02/16 10:56:31 skrll Exp $ */
+/* $NetBSD: vmstat.c,v 1.264 2025/12/29 06:57:06 andvar Exp $ */
 
 /*-
  * Copyright (c) 1998, 2000, 2001, 2007, 2019, 2020
@@ -71,7 +71,7 @@ __COPYRIGHT("@(#) Copyright (c) 1980, 1986, 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)vmstat.c	8.2 (Berkeley) 3/1/95";
 #else
-__RCSID("$NetBSD: vmstat.c,v 1.262 2025/02/16 10:56:31 skrll Exp $");
+__RCSID("$NetBSD: vmstat.c,v 1.264 2025/12/29 06:57:06 andvar Exp $");
 #endif
 #endif /* not lint */
 

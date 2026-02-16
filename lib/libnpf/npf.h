@@ -135,6 +135,7 @@ int		npf_nat_settable(nl_nat_t *, unsigned);
 int		npf_nat_settablefilter(nl_nat_t *, int, npf_addr_t *, npf_netmask_t);
 int		npf_nat_setalgo(nl_nat_t *, unsigned);
 int		npf_nat_setnpt66(nl_nat_t *, uint16_t);
+int		npf_nat_setnat64plen(nl_nat_t *, uint8_t);
 int		npf_nat_gettype(nl_nat_t *);
 unsigned	npf_nat_getflags(nl_nat_t *);
 const npf_addr_t *npf_nat_getaddr(nl_nat_t *, size_t *, npf_netmask_t *);

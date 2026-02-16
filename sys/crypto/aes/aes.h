@@ -1,4 +1,4 @@
-/*	$NetBSD: aes.h,v 1.4 2020/07/25 22:14:35 riastradh Exp $	*/
+/*	$NetBSD: aes.h,v 1.5 2025/11/22 22:32:39 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -35,7 +35,8 @@
 /*
  * struct aes
  *
- *	Expanded round keys.
+ *	Expanded round keys, in implementation-dependent format.  (For
+ *	the standard AES key schedule, see aes_keysched.h.)
  */
 union aes {
 	uint32_t	aes_rk[60];

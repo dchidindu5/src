@@ -1,4 +1,4 @@
-/*	$NetBSD: strftime.c,v 1.57 2025/01/23 22:44:22 christos Exp $	*/
+/*	$NetBSD: strftime.c,v 1.59 2026/01/09 16:11:23 christos Exp $	*/
 
 /* Convert a broken-down timestamp to a string.  */
 
@@ -35,14 +35,13 @@
 static char	elsieid[] = "@(#)strftime.c	7.64";
 static char	elsieid[] = "@(#)strftime.c	8.3";
 #else
-__RCSID("$NetBSD: strftime.c,v 1.57 2025/01/23 22:44:22 christos Exp $");
+__RCSID("$NetBSD: strftime.c,v 1.59 2026/01/09 16:11:23 christos Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
 #include "namespace.h"
 
 #include <stddef.h>
-#include <assert.h>
 #include <locale.h>
 #include "setlocale_local.h"
 
@@ -742,7 +741,6 @@ label:
 				diff /= SECSPERMIN;
 				diff = (diff / MINSPERHOUR) * 100 +
 					(diff % MINSPERHOUR);
-				_DIAGASSERT(__type_fit(int, diff));
 				pt = _conv((int)diff,
 				    fmt_padding[PAD_FMT_YEAR][PadIndex],
 				    pt, ptlim, loc);
@@ -790,11 +788,17 @@ strftime(char *restrict s, size_t maxsize, char const *restrict format,
 	 struct tm const *restrict t)
 {
 	size_t r;
-	
-	rwlock_wrlock(&__lcl_lock);
-	tzset_unlocked();
-	r = strftime_z(__lclptr, s, maxsize, format, t);
-	rwlock_unlock(&__lcl_lock);
+	time_t now = __lcl_get_monotonic_time();
+	int err = __lcl_lock();
+	if (0 < err) {
+		errno = err;
+		return 0;
+	}
+	tzset_unlocked(!err, false, now);
+
+	r = strftime_z(__lcl_ptr, s, maxsize, format, t);
+
+	__lcl_unlock(!err);
 
 	return r;
 }
@@ -804,11 +808,17 @@ strftime_l(char * __restrict s, size_t maxsize, const char * __restrict format,
     const struct tm * __restrict t, locale_t loc)
 {
 	size_t r;
+	time_t now = __lcl_get_monotonic_time();
+	int err = __lcl_lock();
+	if (0 < err) {
+		errno = err;
+		return 0;
+	}
+	tzset_unlocked(!err, false, now);
 
-	rwlock_wrlock(&__lcl_lock);
-	tzset_unlocked();
-	r = strftime_lz(__lclptr, s, maxsize, format, t, loc);
-	rwlock_unlock(&__lcl_lock);
+	r = strftime_lz(__lcl_ptr, s, maxsize, format, t, loc);
+
+	__lcl_unlock(!err);
 
 	return r;
 }

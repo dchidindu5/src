@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_accessors.h,v 1.53 2025/10/20 04:20:37 perseant Exp $	*/
+/*	$NetBSD: lfs_accessors.h,v 1.57 2025/12/02 01:23:09 perseant Exp $	*/
 
 /*  from NetBSD: lfs.h,v 1.165 2015/07/24 06:59:32 dholland Exp  */
 /*  from NetBSD: dinode.h,v 1.25 2016/01/22 23:06:10 dholland Exp  */
@@ -693,11 +693,8 @@ lfs_iblock_set(STRUCT_LFS *fs, void *block, unsigned ix, daddr_t val)
 } while (0)
 
 #define LFS_WRITESEGENTRY(SP, F, IN, BP) do {				\
-	if ((SP)->su_nbytes == 0)					\
-		(SP)->su_flags |= SEGUSE_EMPTY;				\
-	else								\
-		(SP)->su_flags &= ~SEGUSE_EMPTY;			\
-	(F)->lfs_suflags[(F)->lfs_activesb][(IN)] = (SP)->su_flags;	\
+	if (((BP)->b_flags & B_GATHERED) == 0)			 	\
+		(F)->lfs_flags |= LFS_IFDIRTY;				\
 	LFS_BWRITE_LOG(BP);						\
 } while (0)
 
@@ -823,6 +820,16 @@ lfs_ii_setblock(STRUCT_LFS *fs, IINFO *iip, uint64_t block)
 #define IFILE_ENTRYSIZE(fs) \
 	((fs)->lfs_is64 ? sizeof(IFILE64) : sizeof(IFILE32))
 
+/* No valid inode number can be as high as this */
+#ifdef _KERNEL
+# define LFS_MAXINO(fs) (((fs->lfs_ivnode->v_size >> lfs_sb_getbshift(fs)) \
+			- lfs_sb_getcleansz(fs) - lfs_sb_getsegtabsz(fs)) \
+	* lfs_sb_getifpb(fs))
+#define LFS_ASSERT_MAXINO(fs, ino) KASSERTMSG(ino < LFS_MAXINO(fs),	\
+	"inode %jd >= max %jd", (intmax_t)(ino), (intmax_t)LFS_MAXINO(fs));
+
+#endif
+
 /*
  * LFSv1 compatibility code is not allowed to touch if_atime, since it
  * may not be mapped!
@@ -859,6 +866,11 @@ lfs_ii_setblock(STRUCT_LFS *fs, IINFO *iip, uint64_t block)
 	} else {							\
 		(IP) = (IFILE *)((IFILE_V1 *)(IP) + 1);			\
 	}								\
+} while (0)
+#define LFS_WRITEIENTRY(IP, F, IN, BP) do {				\
+	if (((BP)->b_flags & B_GATHERED) == 0)				\
+		(F)->lfs_flags |= LFS_IFDIRTY;				\
+	LFS_BWRITE_LOG(BP);						\
 } while (0)
 
 #define LFS_DEF_IF_ACCESSOR(type, type32, field) \
@@ -1001,10 +1013,11 @@ lfs_ci_shiftdirtytoclean(STRUCT_LFS *fs, CLEANERINFO *cip, unsigned num)
 		lfs_ci_setfree_head(FS, CIP, VAL);			\
 		if ((VAL) == LFS_UNUSED_INUM)				\
 			lfs_ci_setfree_tail(FS, CIP, VAL);		\
-		LFS_BWRITE_LOG(BP);					\
 		mutex_enter(&lfs_lock);					\
-		(FS)->lfs_flags |= LFS_IFDIRTY;				\
+		if (((BP)->b_flags & B_GATHERED) == 0)		 	\
+			(FS)->lfs_flags |= LFS_IFDIRTY;			\
 		mutex_exit(&lfs_lock);					\
+		LFS_BWRITE_LOG(BP);					\
 	}								\
 } while (0)
 
@@ -1019,10 +1032,11 @@ lfs_ci_shiftdirtytoclean(STRUCT_LFS *fs, CLEANERINFO *cip, unsigned num)
 	lfs_ci_setfree_tail(FS, CIP, VAL);				\
 	if ((VAL) == LFS_UNUSED_INUM)					\
 		lfs_ci_setfree_head(FS, CIP, VAL);			\
-	LFS_BWRITE_LOG(BP);						\
 	mutex_enter(&lfs_lock);						\
-	(FS)->lfs_flags |= LFS_IFDIRTY;					\
+	if (((BP)->b_flags & B_GATHERED) == 0)				\
+		(FS)->lfs_flags |= LFS_IFDIRTY;				\
 	mutex_exit(&lfs_lock);						\
+	LFS_BWRITE_LOG(BP);						\
 } while (0)
 
 /*
@@ -1424,7 +1438,7 @@ lfs_blocks_fromfinfo(STRUCT_LFS *fs, union lfs_blocks *bp, FINFO *fip)
 	firstblock = (char *)fip + FINFOSIZE(fs);
 	if (fs->lfs_is64) {
 		bp->b64 = (int64_t *)firstblock;
-	}  else {
+	} else {
 		bp->b32 = (int32_t *)firstblock;
 	}
 }

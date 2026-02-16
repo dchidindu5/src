@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.261 2025/10/06 06:46:12 mrg Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.263 2026/01/19 02:45:15 mrg Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -286,6 +286,7 @@
 ./usr/include/gcc-12
 ./usr/include/gcc-12/sanitizer
 ./usr/include/gcc-14
+./usr/include/gcc-14/finclude
 ./usr/include/gcc-14/sanitizer
 ./usr/include/gssapi
 ./usr/include/isofs
@@ -360,6 +361,7 @@
 ./usr/lib/openssl/modules
 ./usr/lib/pkgconfig
 ./usr/lib/postfix
+./usr/lib/private
 ./usr/lib/security
 ./usr/libdata
 ./usr/libdata/debug
@@ -375,6 +377,7 @@
 ./usr/libdata/debug/usr/lib
 ./usr/libdata/debug/usr/lib/i18n
 ./usr/libdata/debug/usr/lib/named
+./usr/libdata/debug/usr/lib/private
 ./usr/libdata/debug/usr/lib/security
 ./usr/libdata/debug/usr/libexec
 ./usr/libdata/debug/usr/libexec/ching

@@ -282,11 +282,15 @@ npfctl_build_fam(npf_bpf_t *ctx, sa_family_t family,
 	 * Otherwise, address of invalid family was passed manually.
 	 */
 	if (family != AF_UNSPEC && family != fam->fam_family) {
-		if (!fam->fam_ifindex) {
+		if (!((family == AF_INET && fam->fam_family == AF_INET6) ||
+          (family == AF_INET6 && fam->fam_family == AF_INET))) {
+
+			if (!fam->fam_ifindex) {
 			yyerror("specified address is not of the required "
 			    "family %d", family);
+			}
+			return false;
 		}
-		return false;
 	}
 
 	family = fam->fam_family;
@@ -986,7 +990,7 @@ npfctl_dnat_check(const addr_port_t *ap, const unsigned algo)
 void
 npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
     const addr_port_t *ap1, const addr_port_t *ap2, const npfvar_t *popts,
-    const filt_opts_t *fopts, unsigned algo)
+    const filt_opts_t *fopts, unsigned algo, unsigned plen)
 {
 	fam_addr_mask_t *am1 = NULL, *am2 = NULL;
 	nl_nat_t *nt1 = NULL, *nt2 = NULL;
@@ -1057,6 +1061,39 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 				    "NETMAP algorithm must be 1:1");
 			}
 			break;
+		case NPF_ALGO_NAT64: {
+			/*
+			Validate that both addreses are not tables/masks.
+			*/
+    		if (am1 == NULL || am2 == NULL) {
+        		yyerror("NAT64 requires both translation endpoints to be single addresses");
+    		}
+			/*
+			* NAT64 requires that no two addresses are the same
+			* one MUST be IPv6, the other IPv4 and vice versa.
+			*/
+			if (am1->fam_family == am2->fam_family) {
+				yyerror("one address must be IPv6 and "
+					"the other IPv4 and vice versa");
+			}
+				/* Validate prefix length (plen). */
+				/*am1 and am2 are addresses parsed from the NAT rule (IPv4 or IPv6).*/
+
+			switch (plen) {
+			case 32:
+			case 40:
+			case 48:
+			case 56:
+			case 64:
+    		break;
+
+			default:
+
+    		plen = 96;
+   			break;
+		}
+		break;
+	}
 		case NPF_ALGO_NONE:
 			if ((am1 && am1->fam_mask != NPF_NO_NETMASK) ||
 			    (am2 && am2->fam_mask != NPF_NO_NETMASK)) {
@@ -1115,6 +1152,16 @@ npfctl_build_natseg(int sd, int type, unsigned mflags, const char *ifname,
 		assert(nt1 && nt2);
 		npf_nat_setnpt66(nt1, ~adj);
 		npf_nat_setnpt66(nt2, adj);
+		break;
+	case NPF_ALGO_NAT64:
+		if (nt1){
+			//Add new case fpr nat64
+			//basically setting prefix length
+			npf_nat_setnat64plen(nt1, plen);
+		}
+		if (nt2){
+			npf_nat_setnat64plen(nt2, plen);
+		}
 		break;
 	default:
 		/*

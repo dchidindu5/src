@@ -130,6 +130,8 @@ ipset			return IPSET;
 "ip-hash"		return IPHASH;
 "round-robin"		return ROUNDROBIN;
 npt66			return NPT66;
+nat64			return NAT64;
+plen				return NAT64_PLEN;
 "-"			return MINUS;
 procedure		return PROCEDURE;
 \\\n			yylineno++; yycolumn = 0;

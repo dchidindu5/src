@@ -1,4 +1,4 @@
-/* $NetBSD: linux_systrace_args.c,v 1.28 2024/09/28 19:36:20 christos Exp $ */
+/* $NetBSD: linux_systrace_args.c,v 1.31 2025/11/10 15:41:57 christos Exp $ */
 
 /*
  * System call argument to DTrace register array conversion.
@@ -1082,6 +1082,14 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 3;
 		break;
 	}
+	/* linux_sys___prctl */
+	case 172: {
+		const struct linux_sys___prctl_args *p = params;
+		iarg[0] = SCARG(p, code); /* int */
+		uarg[1] = (intptr_t) SCARG(p, args[0]); /* void * */
+		*n_args = 2;
+		break;
+	}
 	/* linux_sys_rt_sigaction */
 	case 174: {
 		const struct linux_sys_rt_sigaction_args *p = params;
@@ -1818,6 +1826,16 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[3] = SCARG(p, options); /* int */
 		uarg[4] = (intptr_t) SCARG(p, rusage); /* struct rusage50 * */
 		*n_args = 5;
+		break;
+	}
+	/* linux_sys_semtimedop */
+	case 312: {
+		const struct linux_sys_semtimedop_args *p = params;
+		iarg[0] = SCARG(p, semid); /* int */
+		uarg[1] = (intptr_t) SCARG(p, sops); /* struct sembuf * */
+		uarg[2] = SCARG(p, nsops); /* size_t */
+		uarg[3] = (intptr_t) SCARG(p, timeout); /* struct linux_timespec * */
+		*n_args = 4;
 		break;
 	}
 	/* linux_sys_inotify_init */
@@ -3964,6 +3982,19 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* linux_sys___prctl */
+	case 172:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "void *";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_rt_sigaction */
 	case 174:
 		switch(ndx) {
@@ -5219,6 +5250,25 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 4:
 			p = "struct rusage50 *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_semtimedop */
+	case 312:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "struct sembuf *";
+			break;
+		case 2:
+			p = "size_t";
+			break;
+		case 3:
+			p = "struct linux_timespec *";
 			break;
 		default:
 			break;
@@ -6720,6 +6770,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* linux_sys___prctl */
+	case 172:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_rt_sigaction */
 	case 174:
 		if (ndx == 0 || ndx == 1)
@@ -7130,6 +7185,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* linux_sys_waitid */
 	case 280:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_semtimedop */
+	case 312:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;

@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.75 2024/09/28 19:35:55 christos Exp $
+	$NetBSD: syscalls.master,v 1.78 2025/11/10 15:41:38 christos Exp $
 
 ;	@(#)syscalls.master	8.1 (Berkeley) 7/19/93
 
@@ -340,7 +340,8 @@
 			    size_t bytecount); }
 155	UNIMPL		pivot_root
 156	STD		{ int|linux_sys||__sysctl(struct linux___sysctl *lsp); }
-157	UNIMPL		prctl
+157	INDIR		{ int|linux_sys||__prctl(int code, \
+                                  ... void * args[LINUX_SYS_MAXSYSARGS]); }
 158	STD		{ int|linux_sys||arch_prctl(int code, \
 			    unsigned long addr); }
 159	UNIMPL		adjtimex
@@ -425,7 +426,9 @@
 			    struct linux_dirent64 *dent, unsigned int count); }
 218	STD		{ int|linux_sys||set_tid_address(int *tid); }
 219	UNIMPL		restart_syscall
-220	UNIMPL		semtimedop
+220	STD		{ int|linux_sys||semtimedop(int semid, \
+			    struct sembuf *sops, size_t nsops, \
+			    struct linux_timespec *timeout); }
 221	STD		{ int|linux_sys||fadvise64(int fd, off_t offset, \
 			    size_t len, int advice); }
 222	STD		{ int|linux_sys||timer_create(clockid_t clockid, \

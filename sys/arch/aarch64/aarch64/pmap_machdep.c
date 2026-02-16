@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_machdep.c,v 1.6 2023/04/20 08:28:02 skrll Exp $	*/
+/*	$NetBSD: pmap_machdep.c,v 1.8 2026/01/22 07:08:54 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2022 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
 #define __PMAP_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap_machdep.c,v 1.6 2023/04/20 08:28:02 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_machdep.c,v 1.8 2026/01/22 07:08:54 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -497,7 +497,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	pmap_t efipm = pmap_efirt();
 	efipm->pm_l0_pa = AARCH64_KVA_TO_PA(efi_l0va);
 	efipm->pm_pdetab = (pmap_pdetab_t *)efi_l0va;
-
 #endif
 
 	pool_init(&pmap_pmap_pool, PMAP_SIZE, 0, 0, 0, "pmappl",
@@ -549,6 +548,7 @@ pmap_md_xtab_activate(pmap_t pm, struct lwp *l)
 
 	if (pm != pmap_kernel()) {
 		reg_tcr_el1_write(old_tcrel1 & ~TCR_EPD0);
+		isb();
 	}
 
 	UVMHIST_LOG(maphist, " pm %#jx pm->pm_l0 %016jx pm->pm_l0_pa %016jx asid %ju... done",

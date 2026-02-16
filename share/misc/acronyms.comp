@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.414 2025/10/14 14:48:28 jschauma Exp $
+$NetBSD: acronyms.comp,v 1.421 2026/02/09 02:31:28 jschauma Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -17,6 +17,7 @@ ACK	acknowledgement
 ACL	access control list
 ACL	active current loop
 ACL	asynchronous connection less
+ACP	access control policy
 ACP	auxiliary control {process,program}
 ACPI	advanced configuration and power interface
 ACS	access control set
@@ -433,6 +434,7 @@ DIFS	distributed inter-frame space
 DIMM	dual inline memory module
 DIRT	design in real time
 DKI	driver/kernel interface
+DKIM	DomainKeys Identified Mail
 DL	diode logic
 DL	discrete logarithm
 DL	download
@@ -442,6 +444,7 @@ DLL	dynamic link library
 DLNA	digital living network alliance
 DLP	discrete logarithm problem
 DMA	direct memory access
+DMARC	Domain-based Message Authentication, Reporting and Conformance
 DMB	data memory barrier (Arm)
 DMI	desktop management interface
 DMS	document management system
@@ -695,6 +698,7 @@ GPL	[GNU] General Public License
 GPR	general purpose register
 GPS	generalized processor sharing
 GPT	GUID partition table
+GPT	generative pre-trained transformer
 GPU	graphics processing unit
 GR	golden ratio
 GRE	generic routing encapsulation
@@ -943,6 +947,7 @@ LLD	low-level design
 LLDD	low-level design document
 LLDP	link layer discovery protocol
 LLF	low level format
+LLM	large language model
 LLMNR	link-local multicast name resolution
 LLVM	Low Level Virtual Machine
 LM	long mode
@@ -1167,6 +1172,8 @@ NTP	Network Time Protocol
 NUMA	non-uniform memory access
 NURBS	non-uniform rational basis spline
 NVD	National Vulnerability Database
+NVM	Non-Volatile Memory
+NVME	Non-Volatile Memory Express
 NVMM	NetBSD Virtual Machine Monitor
 NVMM	non-volatile main memory
 NVRAM	non-volatile random access memory
@@ -1223,6 +1230,7 @@ OTP	one time password
 OTP	open telecom platform
 OU	organizational unit
 OUI	organizationally unique identifier
+OVMF	Open Virtual Machine Firmware
 OWASP	Open Web Application Security Project
 OWL	Web Ontology Language
 P2P	PCI to PCI
@@ -1503,6 +1511,8 @@ RTP	Real-time Transport Protocol
 RTS	request to send
 RTT	round trip time
 RTTI	run-time type information
+RUA	Reporting URI for Aggregate reports (DKIM)
+RUF	Reporting URI for Forensics reports (DKIM)
 RUP	rational unified process
 RW	Rabin-Williams
 RWM	read-write memory
@@ -1657,6 +1667,7 @@ SPARQL	SPARQL Protocol and RDF Query Language
 SPD	security policy database
 SPD	serial presence detect
 SPDIF	Sony/Philips digital interface format
+SPF	Sender Policy Framework
 SPI	serial peripheral interface
 SPI	stateful packet inspection
 SPIR	standard portable intermediate representation
@@ -1885,6 +1896,7 @@ VHDCI	very high density cable interconnect
 VID	{VLAN,voltage level} identifier
 VIM	Vi IMproved
 VIPT	virtually indexed, physically tagged
+VIS	Visual Instruction Set
 VIVT	virtually indexed, virtually tagged
 VLAN	virtual local area network
 VLD	variable-length decoding

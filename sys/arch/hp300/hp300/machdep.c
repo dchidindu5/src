@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.240 2024/12/21 17:53:21 tsutsui Exp $	*/
+/*	$NetBSD: machdep.c,v 1.252 2025/12/20 10:51:03 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.240 2024/12/21 17:53:21 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.252 2025/12/20 10:51:03 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -117,7 +117,7 @@ struct cpu_info cpu_info_store;
 
 struct vm_map *phys_map = NULL;
 
-extern paddr_t avail_end;
+extern paddr_t avail_start, avail_end;
 
 /*
  * bootinfo base (physical and virtual).  The bootinfo is placed, by
@@ -146,7 +146,7 @@ static void	cpu_init_kcore_hdr(void);
 
 /* functions called from locore.s */
 void    dumpsys(void);
-void	hp300_init(void);
+void	machine_init(paddr_t);
 void    straytrap(int, u_short);
 void	nmihand(struct frame);
 
@@ -164,16 +164,59 @@ static cpu_kcore_hdr_t cpu_kcore_hdr;
 int	cpuspeed;		/* relative CPU speed; XXX skewed on 68040 */
 int	delay_divisor;		/* delay constant */
 
+#ifdef __HAVE_NEW_PMAP_68K
+/*
+ * machine_bootmap[] is checked in pmap_bootstrap1() of the new m68k pmap
+ * and it allocates kernel address space for intio devices.
+ */
+#define PMBM_INTIO	0
+#define PMBM_EXTIO	1
+#define PMBM_BOOTINFO	2
+#define PMBM_MAXADDR	3
+const struct pmap_bootmap machine_bootmap[] = {
+	{ .pmbm_vaddr_ptr = (vaddr_t *)&intiobase,
+	  .pmbm_paddr = INTIOBASE,
+	  .pmbm_size  = INTIOSIZE,
+	  .pmbm_flags = PMBM_F_CI },
+
+	{ .pmbm_vaddr_ptr = (vaddr_t *)&extiobase,
+	  .pmbm_paddr = 0,	/* VAONLY, so no PA mappings */
+	  .pmbm_size  = ctob(EIOMAPSIZE),
+	  .pmbm_flags = PMBM_F_VAONLY | PMBM_F_CI },
+
+	{ .pmbm_vaddr_ptr = &bootinfo_va,
+	  .pmbm_paddr = 0,	/* VAONLY, so no PA mappings */
+	  .pmbm_size  = ctob(1),
+	  .pmbm_flags = PMBM_F_VAONLY },
+
+	/* Last page of RAM is mapped VA==PA for the MMU trampoline. */
+	{ .pmbm_vaddr = MAXADDR,
+	  .pmbm_paddr = MAXADDR,
+	  .pmbm_size  = PAGE_SIZE,
+	  .pmbm_flags = PMBM_F_FIXEDVA | PMBM_F_CI },
+
+	{ .pmbm_vaddr = -1 },
+};
+
+/*
+ * The new 68k pmap utilizes the MAXADDR page as the NULL segment table
+ * to save a page, so we have to preserve PROM workarea for the next reboot.
+ * This preservation area is much less than a page size, so the trade-off
+ * seems worth it.
+ */
+#define	BOOTWORKSTART	0xfffffdc0U	/* from hp300/stand/common/srt0.S */
+#define	BOOTWORKSIZE	(0U - BOOTWORKSTART)
+static char bootwork_savearea[BOOTWORKSIZE];
+#endif /* __HAVE_NEW_PMAP_68K */
+
 /*
  * Early initialization, before main() is called.
  */
 void
-hp300_init(void)
+machine_init(paddr_t nextpa)
 {
 	struct btinfo_magic *bt_mag;
 	int i;
-
-	extern paddr_t avail_start, avail_end;
 
 #ifdef CACHE_HAVE_VAC
 	/*
@@ -181,20 +224,36 @@ hp300_init(void)
 	 */
 	switch (machineid) {
 	case HP_320:
-		pmap_aliasmask = 0x3fff;	/* 16KB */
+		pmap_init_vac(16 * 1024);
 		break;
 	case HP_350:
-		pmap_aliasmask = 0x7fff;	/* 32KB */
+		pmap_init_vac(32 * 1024);
 		break;
 	default:
 		break;
 	}
 #endif
 
+#ifdef __HAVE_NEW_PMAP_68K
+	/*
+	 * We've used NULL_SEGTAB_PA in <machine/pmap.h> to use the
+	 * reserved last-page-of-RAM as the NULL segment table.  But,
+	 * we copied code into that page (the MMU trampoline) and it
+	 * also contains the PROM's work area.  Preserve the PROM work
+	 * area and zero it out now.
+	 */
+	memcpy(bootwork_savearea, (void *)BOOTWORKSTART, BOOTWORKSIZE);
+	memset((void *)MAXADDR, 0, PAGE_SIZE);
+#endif
+
 	/*
 	 * Tell the VM system about available physical memory.  The
 	 * hp300 only has one segment.
 	 */
+	avail_start = nextpa;
+	avail_end = m68k_ptob(maxmem) - \
+	    (m68k_round_page(MSGBUFSIZE) + m68k_ptob(1));
+
 	uvm_page_physload(atop(avail_start), atop(avail_end),
 	    atop(avail_start), atop(avail_end), VM_FREELIST_DEFAULT);
 
@@ -216,8 +275,10 @@ hp300_init(void)
 	 * exists by searching for the MAGIC record.  If it's not
 	 * there, disable bootinfo.
 	 */
+#ifndef __HAVE_NEW_PMAP_68K
 	bootinfo_va = virtual_avail;
 	virtual_avail += PAGE_SIZE;
+#endif
 	pmap_enter(pmap_kernel(), bootinfo_va, bootinfo_pa,
 	    VM_PROT_READ|VM_PROT_WRITE,
 	    VM_PROT_READ|VM_PROT_WRITE|PMAP_WIRED);
@@ -229,7 +290,9 @@ hp300_init(void)
 		pmap_remove(pmap_kernel(), bootinfo_va,
 		    bootinfo_va + PAGE_SIZE);
 		pmap_update(pmap_kernel());
+#ifndef __HAVE_NEW_PMAP_68K
 		virtual_avail -= PAGE_SIZE;
+#endif
 		bootinfo_va = 0;
 	}
 }
@@ -286,7 +349,7 @@ cpu_startup(void)
 {
 	vaddr_t minaddr, maxaddr;
 	char pbuf[9];
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(__HAVE_NEW_PMAP_68K)
 	extern int pmapdebug;
 	int opmapdebug = pmapdebug;
 
@@ -319,7 +382,7 @@ cpu_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(__HAVE_NEW_PMAP_68K)
 	pmapdebug = opmapdebug;
 #endif
 	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
@@ -329,9 +392,6 @@ cpu_startup(void)
 	 * Set up CPU-specific registers, cache, etc.
 	 */
 	initcpu();
-
-	/* Safe to use malloc for extio_ex now. */
-	extio_ex_malloc_safe = 1;
 }
 
 struct hp300_model {
@@ -552,6 +612,9 @@ identifycpu(void)
  */
 SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 {
+	static bool broken_rmc;
+
+	broken_rmc = (cputype == M68020);
 
 	sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT,
@@ -564,6 +627,12 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 	    CTLTYPE_STRUCT, "console_device", NULL,
 	    sysctl_consdev, 0, NULL, sizeof(dev_t),
 	    CTL_MACHDEP, CPU_CONSDEV, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_BOOL, "broken_rmc", NULL,
+	    NULL, 0, &broken_rmc, 0,
+	    CTL_MACHDEP, CPU_BROKEN_RMC, CTL_EOL);
 }
 
 int	waittime = -1;
@@ -605,9 +674,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -615,13 +684,18 @@ cpu_reboot(int howto, char *bootstr)
 	/* Finally, halt/reboot the system. */
 	if (howto & RB_HALT) {
 		printf("System halted.  Hit any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
 	DELAY(1000000);
+
+#ifdef __HAVE_NEW_PMAP_68K
+	/* Restore the PROM work area first. */
+	memcpy((void *)BOOTWORKSTART, bootwork_savearea, BOOTWORKSIZE);
+#endif
 	doboot();
 	/* NOTREACHED */
 }
@@ -632,59 +706,11 @@ cpu_reboot(int howto, char *bootstr)
 static void
 cpu_init_kcore_hdr(void)
 {
-	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
-	struct m68k_kcore_hdr *m = &h->un._m68k;
-	extern int end;
+	phys_ram_seg_t *ram_segs = pmap_init_kcore_hdr(&cpu_kcore_hdr);
 
-	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr));
-
-	/*
-	 * Initialize the `dispatcher' portion of the header.
-	 */
-	strcpy(h->name, machine);
-	h->page_size = PAGE_SIZE;
-	h->kernbase = KERNBASE;
-
-	/*
-	 * Fill in information about our MMU configuration.
-	 */
-	m->mmutype	= mmutype;
-	m->sg_v		= SG_V;
-	m->sg_frame	= SG_FRAME;
-	m->sg_ishift	= SG_ISHIFT;
-	m->sg_pmask	= SG_PMASK;
-	m->sg40_shift1	= SG4_SHIFT1;
-	m->sg40_mask2	= SG4_MASK2;
-	m->sg40_shift2	= SG4_SHIFT2;
-	m->sg40_mask3	= SG4_MASK3;
-	m->sg40_shift3	= SG4_SHIFT3;
-	m->sg40_addr1	= SG4_ADDR1;
-	m->sg40_addr2	= SG4_ADDR2;
-	m->pg_v		= PG_V;
-	m->pg_frame	= PG_FRAME;
-
-	/*
-	 * Initialize pointer to kernel segment table.
-	 */
-	m->sysseg_pa = (uint32_t)(pmap_kernel()->pm_stpa);
-
-	/*
-	 * Initialize relocation value such that:
-	 *
-	 *	pa = (va - KERNBASE) + reloc
-	 */
-	m->reloc = lowram;
-
-	/*
-	 * Define the end of the relocatable range.
-	 */
-	m->relocend = (uint32_t)&end;
-
-	/*
-	 * hp300 has one contiguous memory segment.
-	 */
-	m->ram_segs[0].start = lowram;
-	m->ram_segs[0].size  = ctob(physmem);
+	/* hp300 has one contiguous memory segment. */
+	ram_segs[0].start = lowram;
+	ram_segs[0].size  = ctob(physmem);
 }
 
 /*

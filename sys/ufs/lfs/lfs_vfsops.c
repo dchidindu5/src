@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_vfsops.c,v 1.391 2025/10/20 19:49:05 perseant Exp $	*/
+/*	$NetBSD: lfs_vfsops.c,v 1.399 2026/01/05 05:02:47 perseant Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003, 2007, 2007
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_vfsops.c,v 1.391 2025/10/20 19:49:05 perseant Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_vfsops.c,v 1.399 2026/01/05 05:02:47 perseant Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_lfs.h"
@@ -125,6 +125,8 @@ MODULE(MODULE_CLASS_VFS, lfs, NULL);
 static int lfs_gop_write(struct vnode *, struct vm_page **, int, int);
 static int lfs_mountfs(struct vnode *, struct mount *, struct lwp *);
 static int lfs_flushfiles(struct mount *, int);
+static int compare_nodes_sd(void *, const void *, const void *);
+static int compare_key_sd(void *, const void *, const void *);
 
 extern const struct vnodeopv_desc lfs_vnodeop_opv_desc;
 extern const struct vnodeopv_desc lfs_specop_opv_desc;
@@ -132,6 +134,13 @@ extern const struct vnodeopv_desc lfs_fifoop_opv_desc;
 
 extern int locked_queue_rcount;
 extern long locked_queue_rbytes;
+
+static const rb_tree_ops_t lfs_rbtree_ops = {
+	.rbto_compare_nodes = compare_nodes_sd,
+	.rbto_compare_key = compare_key_sd,
+	.rbto_node_offset = offsetof(struct segdelta, rb_entry),
+	.rbto_context = NULL
+};
 
 struct lwp * lfs_writer_daemon = NULL;
 kcondvar_t lfs_writerd_cv;
@@ -795,6 +804,19 @@ lfs_mount(struct mount *mp, const char *path, void *data, size_t *data_len)
 			if (error)
 				return error;
 			fs->lfs_ronly = 1;
+
+			/*
+			 * Drain pending I/O now that we have declared
+			 * read-only.  We compare against 1 because
+			 * seglock increments by one.
+			 */
+			lfs_prelock(fs, 0);
+			mutex_enter(&lfs_lock);
+			while (fs->lfs_iocount > 1)
+				(void)mtsleep(&fs->lfs_iocount, PRIBIO + 1,
+					      "lfs_roio", 0, &lfs_lock);
+			mutex_exit(&lfs_lock);
+			lfs_preunlock(fs);
 		} else if (fs->lfs_ronly && (mp->mnt_iflag & IMNT_WANTRDWR)) {
 			/*
 			 * Changing from read-only to read/write.
@@ -1109,11 +1131,13 @@ lfs_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l)
 	fs->lfs_writer = 0;
 	fs->lfs_dirops = 0;
 	fs->lfs_nadirop = 0;
+	fs->lfs_prelock = 0;
 	fs->lfs_seglock = 0;
 	fs->lfs_cleanlock = 0;
 	fs->lfs_pdflush = 0;
 	fs->lfs_sleepers = 0;
 	fs->lfs_pages = 0;
+	fs->lfs_prelocklwp = NULL;
 	rw_init(&fs->lfs_fraglock);
 	rw_init(&fs->lfs_iflock);
 	cv_init(&fs->lfs_sleeperscv, "lfs_slp");
@@ -1121,6 +1145,8 @@ lfs_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l)
 	cv_init(&fs->lfs_stopcv, "lfsstop");
 	cv_init(&fs->lfs_nextsegsleep, "segment");
 	cv_init(&fs->lfs_cleanercv, "cleancv");
+	cv_init(&fs->lfs_prelockcv, "prelockcv");
+	cv_init(&fs->lfs_cleanquitcv, "cleanquit");
 
 	/* Set the file system readonly/modify bits. */
 	fs->lfs_ronly = ronly;
@@ -1180,7 +1206,7 @@ lfs_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l)
 	/* and paging tailq */
 	TAILQ_INIT(&fs->lfs_pchainhd);
 	/* and delayed segment accounting for truncation list */
-	LIST_INIT(&fs->lfs_segdhd);
+	rb_tree_init(&fs->lfs_segdhd, &lfs_rbtree_ops);
 
 	/*
 	 * We use the ifile vnode for almost every operation.  Instead of
@@ -1200,13 +1226,6 @@ lfs_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l)
 
 	/* Set up segment usage flags for the autocleaner. */
 	fs->lfs_nactive = 0;
-	fs->lfs_suflags = malloc(2 * sizeof(u_int32_t *),
-				 M_SEGMENT, M_WAITOK);
-	fs->lfs_suflags[0] = malloc(lfs_sb_getnseg(fs) * sizeof(u_int32_t),
-				    M_SEGMENT, M_WAITOK);
-	fs->lfs_suflags[1] = malloc(lfs_sb_getnseg(fs) * sizeof(u_int32_t),
-				    M_SEGMENT, M_WAITOK);
-	memset(fs->lfs_suflags[1], 0, lfs_sb_getnseg(fs) * sizeof(u_int32_t));
 	for (i = 0; i < lfs_sb_getnseg(fs); i++) {
 		int changed;
 		struct buf *bp;
@@ -1214,26 +1233,28 @@ lfs_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l)
 		LFS_SEGENTRY(sup, fs, i, bp);
 		changed = 0;
 		if (!ronly) {
-			if (sup->su_nbytes == 0 &&
-			    !(sup->su_flags & SEGUSE_EMPTY)) {
-				sup->su_flags |= SEGUSE_EMPTY;
-				++changed;
-			} else if (!(sup->su_nbytes == 0) &&
-				   (sup->su_flags & SEGUSE_EMPTY)) {
-				sup->su_flags &= ~SEGUSE_EMPTY;
-				++changed;
+			uint32_t nflags = sup->su_flags;
+			nflags &= ~(SEGUSE_ACTIVE | SEGUSE_EMPTY
+				    | SEGUSE_READY | SEGUSE_INVAL
+				    | SEGUSE_ERROR);
+			if (sup->su_nbytes == 0) {
+				if (sup->su_flags & SEGUSE_DIRTY)
+					nflags |= SEGUSE_EMPTY | SEGUSE_READY;
+			} else {
+				nflags &= ~(SEGUSE_EMPTY | SEGUSE_READY);
 			}
-			if (sup->su_flags & (SEGUSE_ACTIVE|SEGUSE_INVAL)) {
-				sup->su_flags &= ~(SEGUSE_ACTIVE|SEGUSE_INVAL);
+			if (nflags != sup->su_flags) {
+				sup->su_flags = nflags;
 				++changed;
 			}
 		}
-		fs->lfs_suflags[0][i] = sup->su_flags;
 		if (changed)
 			LFS_WRITESEGENTRY(sup, fs, i, bp);
 		else
 			brelse(bp, 0);
 	}
+	/* Set lastcleaned to an invalid value */
+	fs->lfs_lastcleaned = (uint32_t)-1;
 
 	/* Free the orphans we discovered while ordering the freelist.  */
 	lfs_free_orphans(fs, orphan, norphan);
@@ -1433,7 +1454,7 @@ lfs_unmount(struct mount *mp, int mntflags)
 
 	/* Check for dirty blocks on ifile */
 	KASSERT(LIST_FIRST(&fs->lfs_ivnode->v_dirtyblkhd) == NULL);
-	
+
 	/* Finish with the Ifile, now that we're done with it */
 	vgone(fs->lfs_ivnode);
 
@@ -1450,11 +1471,18 @@ lfs_unmount(struct mount *mp, int mntflags)
 		printf("lfs_unmount: still claim %d pages (%d in subsystem)\n",
 			fs->lfs_pages, lfs_subsys_pages);
 
+	/*
+	 * Make doubly sure we have no outstanding I/O before we
+	 * call lfs_free_resblks(), to avoid a busy pool panic.
+	 */
+	mutex_enter(&lfs_lock);
+	while (fs->lfs_iocount)
+		mtsleep(&fs->lfs_iocount, PRIBIO + 1, "lfs_umount2", 0,
+			&lfs_lock);
+	mutex_exit(&lfs_lock);
+
 	/* Free per-mount data structures */
 	free(fs->lfs_ino_bitmap, M_SEGMENT);
-	free(fs->lfs_suflags[0], M_SEGMENT);
-	free(fs->lfs_suflags[1], M_SEGMENT);
-	free(fs->lfs_suflags, M_SEGMENT);
 	lfs_free_resblks(fs);
 	cv_destroy(&fs->lfs_sleeperscv);
 	cv_destroy(&fs->lfs_diropscv);
@@ -1524,7 +1552,7 @@ lfs_flushfiles(struct mount *mp, int flags)
 	vp = fs->lfs_ivnode;
 	mutex_enter(vp->v_interlock);
 	if (LIST_FIRST(&vp->v_dirtyblkhd))
-		panic("lfs_unmount: still dirty blocks on ifile vnode");
+		panic("lfs_flushfiles: still dirty blocks on ifile vnode");
 	mutex_exit(vp->v_interlock);
 
 	/* Explicitly write the superblock, to update serial and pflags */
@@ -1622,7 +1650,7 @@ lfs_sync(struct mount *mp, int waitfor, kauth_cred_t cred)
 	}
 	mutex_exit(&lfs_lock);
 
-	lfs_writer_enter(fs, "lfs_dirops");
+	lfs_writer_enter(fs, "lfs_wsync");
 
 	DLOG((DLOG_FLUSH, "lfs_sync waitfor=%x at 0x%jx\n", waitfor,
 	      (uintmax_t)lfs_sb_getoffset(fs)));
@@ -1666,6 +1694,27 @@ lfs_vget(struct mount *mp, ino_t ino, int lktype, struct vnode **vpp)
 	return 0;
 }
 
+static int
+compare_nodes_sd(void *context, const void *v1, const void *v2)
+{
+	const struct segdelta *sd1, *sd2;
+
+	sd1 = (const struct segdelta *)v1;
+	sd2 = (const struct segdelta *)v2;
+	return sd1->segnum - sd2->segnum;
+}
+
+static int
+compare_key_sd(void *context, const void *nv, const void *kv)
+{
+	const struct segdelta *sd;
+	long key;
+
+	sd = (const struct segdelta *)nv;
+	key = *(const long *)kv;
+	return sd->segnum - key;
+}
+
 /*
  * Create a new vnode/inode pair and initialize what fields we can.
  */
@@ -1695,8 +1744,8 @@ lfs_init_vnode(struct ulfsmount *ump, ino_t ino, struct vnode *vp)
 	ip->i_lfs_effnblks = 0;
 	SPLAY_INIT(&ip->i_lfs_lbtree);
 	ip->i_lfs_nbtree = 0;
-	LIST_INIT(&ip->i_lfs_segdhd);
-
+	rb_tree_init(&ip->i_lfs_segdhd, &lfs_rbtree_ops);
+	
 	vp->v_tag = VT_LFS;
 	vp->v_op = lfs_vnodeop_p;
 	vp->v_data = ip;
@@ -1753,11 +1802,13 @@ lfs_loadvnode(struct mount *mp, struct vnode *vp,
 			&lfs_lock);
 	mutex_exit(&lfs_lock);
 
+	KASSERT(ino >= LFS_IFILE_INUM);
+	/* LFS_ASSERT_MAXINO(fs, ino); */
+
 	/* Translate the inode number to a disk address. */
 	if (ino == LFS_IFILE_INUM)
 		daddr = lfs_sb_getidaddr(fs);
 	else {
-		/* XXX bounds-check this too */
 		LFS_IENTRY(ifp, fs, ino, bp);
 		daddr = lfs_if_getdaddr(fs, ifp);
 		if (lfs_sb_getversion(fs) > 1) {
@@ -2206,11 +2257,6 @@ lfs_gop_write(struct vnode *vp, struct vm_page **pgs, int npages,
 				      (lfs_ss_getnfinfo(fs, ssp) < 1 ?
 				       UVMPAGER_MAPIN_WAITOK : 0))) == 0x0) {
 		DLOG((DLOG_PAGE, "lfs_gop_write: forcing write\n"));
-#if 0
-		      " with nfinfo=%d at offset 0x%jx\n",
-		      (int)lfs_ss_getnfinfo(fs, ssp),
-		      (uintmax_t)lfs_sb_getoffset(fs)));
-#endif
 		lfs_updatemeta(sp);
 		lfs_release_finfo(fs);
 		(void) lfs_writeseg(fs, sp);
@@ -2663,14 +2709,6 @@ lfs_resize_fs(struct lfs *fs, int newnsegs)
 		lfs_sb_subavail(fs, cgain * lfs_btofsb(fs, lfs_sb_getssize(fs)) -
 				 lfs_btofsb(fs, csbbytes));
 	}
-
-	/* Resize segment flag cache */
-	fs->lfs_suflags[0] = realloc(fs->lfs_suflags[0],
-	    lfs_sb_getnseg(fs) * sizeof(u_int32_t), M_SEGMENT, M_WAITOK);
-	fs->lfs_suflags[1] = realloc(fs->lfs_suflags[1],
-	    lfs_sb_getnseg(fs) * sizeof(u_int32_t), M_SEGMENT, M_WAITOK);
-	for (i = oldnsegs; i < newnsegs; i++)
-		fs->lfs_suflags[0][i] = fs->lfs_suflags[1][i] = 0x0;
 
 	/* Truncate Ifile if necessary */
 	if (noff < 0) {

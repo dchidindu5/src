@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.662 2025/08/09 23:13:28 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.667 2026/02/08 11:02:03 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -111,7 +111,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.662 2025/08/09 23:13:28 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.667 2026/02/08 11:02:03 rillig Exp $");
 #if defined(MAKE_NATIVE)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -182,8 +182,9 @@ usage(void)
 	(void)fprintf(stderr,
 "usage: %.*s [-BeikNnqrSstWwX]\n"
 "            [-C directory] [-D variable] [-d flags] [-f makefile]\n"
-"            [-I directory] [-J private] [-j max_jobs] [-m directory] [-T file]\n"
-"            [-V variable] [-v variable] [variable=value] [target ...]\n",
+"            [-I directory] [-J private] [-j max_jobs] [-m directory]\n"
+"            [-T file] [-V variable] [-v variable]\n"
+"            [variable=value ...] [target ...]\n",
 	    (int)prognameLen, progname);
 	exit(2);
 }
@@ -460,8 +461,6 @@ static bool
 MainParseOption(char c, const char *argvalue)
 {
 	switch (c) {
-	case '\0':
-		break;
 	case 'B':
 		opts.compatMake = true;
 		Global_Append(MAKEFLAGS, "-B");
@@ -1206,7 +1205,6 @@ InitMaxJobs(void)
 		    "Invalid internal option \"-J\" in \"%s\"; "
 		    "see the manual page",
 		    curdir);
-		PrintStackTrace(true);
 		return;
 	}
 	if (forceJobs || opts.compatMake ||
@@ -1345,6 +1343,8 @@ main_Init(int argc, char **argv)
 	Global_Set("MACHINE", machine);
 	Global_Set("MACHINE_ARCH", machine_arch);
 #ifdef MAKE_VERSION
+	Global_Set_ReadOnly(".MAKE.VERSION", MAKE_VERSION);
+	/* for backwards compatibility */
 	Global_Set("MAKE_VERSION", MAKE_VERSION);
 #endif
 	Global_Set_ReadOnly(".newline", "\n");
@@ -1887,7 +1887,7 @@ Fatal(const char *fmt, ...)
 	va_end(ap);
 	(void)fprintf(stderr, "\n");
 	(void)fflush(stderr);
-	PrintStackTrace(true);
+	PrintStackTrace(stderr, true);
 
 	PrintOnError(NULL, "\n");
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: viaide.c,v 1.105 2025/10/17 22:02:35 andvar Exp $	*/
+/*	$NetBSD: viaide.c,v 1.107 2025/12/04 16:01:43 andvar Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000, 2001 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: viaide.c,v 1.105 2025/10/17 22:02:35 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: viaide.c,v 1.107 2025/12/04 16:01:43 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -329,6 +329,11 @@ static const struct pciide_product_desc pciide_via_products[] =  {
 	  "VIA Technologies VT6415/VT6330 IDE controller",
 	  via_chip_map,
 	},
+	{ PCI_PRODUCT_VIATECH_VT6420_IDE,
+	  0,
+	  "VIA Technologies VT6420 IDE controller",
+	  via_chip_map,
+	},
 	{ PCI_PRODUCT_VIATECH_VT6421_RAID,
 	  0,
 	  "VIA Technologies VT6421 Serial ATA RAID Controller",
@@ -516,6 +521,8 @@ via_chip_map(struct pciide_softc *sc, const struct pci_attach_args *pa)
 			 * during initialization.
 			 */
 			no_ideconf = 1;
+			/* FALLTHROUGH */
+		case PCI_PRODUCT_VIATECH_VT6420_IDE:
 			/* FALLTHROUGH */
 		case PCI_PRODUCT_VIATECH_CX700_IDE:
 			sc->sc_wdcdev.sc_atac.atac_udma_cap = 6;

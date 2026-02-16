@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.184 2024/02/28 13:05:40 thorpej Exp $	*/
+/*	$NetBSD: locore.s,v 1.189 2025/12/04 02:55:24 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -132,11 +132,6 @@ ASENTRY_NOPROFILE(start)
 	movl	#CACHE_OFF,%d0
 	movc	%d0,%cacr		| clear and disable on-chip cache(s)
 
-	/* Initialize source/destination control registers for movs */
-	movql	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
-
 	/*
 	 * Some parameters provided by MacOS
 	 *
@@ -258,8 +253,7 @@ Lstart3:
 	movl	#_C_LABEL(vectab),%d0	| set Vector Base Register
 	movc	%d0,%vbr
 	
-	movl	_C_LABEL(Sysseg),%a1	| system segment table addr
-	addl	_C_LABEL(load_addr),%a1	| Make it physical addr
+	movl	_C_LABEL(Sysseg_pa),%a1	| system segment table PA
 	cmpl	#MMU_68040,_C_LABEL(mmutype)
 	jne	Lenablepre040MMU	| if not 040, skip
 
@@ -415,11 +409,10 @@ Lloaddone:
  * Should be running mapped from this point on
  */
 	lea	_ASM_LABEL(tmpstk),%sp	| temporary stack
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP, lwp0, and initial pcb */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	|   set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init %USP
 
@@ -1004,7 +997,7 @@ ENTRY_NOPROFILE(doboot)
 	movl	#CACHE_OFF,%d0
 	movc	%d0,%cacr		| disable on-chip cache(s)
 Lnocache5:
-	movl	_C_LABEL(maxaddr),%a0	| last page of physical memory
+	movl	_C_LABEL(last_page),%a0	| last page of physical memory
 	lea	Lbootcode,%a1		| start of boot code
 	lea	Lebootcode,%a3		| end of boot code
 Lbootcopy:
@@ -1017,7 +1010,7 @@ Lbootcopy:
 	.word	0xf4f8			| cpusha bc
 LmotommuE:
 #endif
-	movl	_C_LABEL(maxaddr),%a0
+	movl	_C_LABEL(last_page),%a0
 	jmp	%a0@			| jump to last page
 
 Lbootcode:

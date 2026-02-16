@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_swap.c,v 1.209 2025/02/22 09:36:29 mlelstv Exp $	*/
+/*	$NetBSD: uvm_swap.c,v 1.215 2026/02/13 19:16:41 kre Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996, 1997, 2009 Matthew R. Green
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_swap.c,v 1.209 2025/02/22 09:36:29 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_swap.c,v 1.215 2026/02/13 19:16:41 kre Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_compat_netbsd.h"
@@ -500,10 +500,11 @@ int (*uvm_swap_stats50)(const struct sys_swapctl_args *, register_t *) =
 
 /*
  * sys_swapctl: main entry point for swapctl(2) system call
- * 	[with two helper functions: swap_on and swap_off]
+ * 	[with three helper functions: swap_on, swap_off and uvm_swap_stats]
  */
 int
-sys_swapctl(struct lwp *l, const struct sys_swapctl_args *uap, register_t *retval)
+sys_swapctl(struct lwp *l, const struct sys_swapctl_args *uap,
+   register_t *retval)
 {
 	/* {
 		syscallarg(int) cmd;
@@ -779,9 +780,11 @@ uvm_swap_stats(char *ptr, int misc,
     register_t *retval)
 {
 	struct swappri *spp;
-	struct swapdev *sdp;
+	struct swapdev *sdp, **sdps, **sp;
 	struct swapent sep;
-	int count = 0;
+	size_t sdpsize = 0;
+	struct swapdev *stackbuf[8];	/* magic 8, any number >1 will do */
+	int count, slots;
 	int error;
 
 	KASSERT(len <= sizeof(sep));
@@ -794,34 +797,153 @@ uvm_swap_stats(char *ptr, int misc,
 	if (misc == 0 || uvmexp.nswapdev == 0)
 		return 0;
 
-	/* Make sure userland cannot exhaust kernel memory */
-	if ((size_t)misc > (size_t)uvmexp.nswapdev)
-		misc = uvmexp.nswapdev;
+	KASSERT(rw_lock_held(&swap_syscall_lock));
+
+	/*
+	 * Allocate space (slots) for pointers to all swapdevs
+	 *
+	 * This needs to be done here (not earlier) (and so needs
+	 * the unlock/lock dance) because of the way the various
+	 * compat functions work.
+	 */
+	sdps = NULL;
+	slots = uvmexp.nswapdev;
+
+	if (slots > misc)	/* we never need more than requested */
+		slots = misc;
+
+	/*
+	 * Nb: do not limit misc to <= uvmexp.nswapdev yet,
+	 * as the latter might get bigger (or smaller)
+	 */
+
+	if ((SIZE_T_MAX / sizeof sdp) <= misc)	/* unlikely */
+		return E2BIG;
+
+	/*
+	 * One slot for each currently existing swap device, but
+	 * limited (above) to no more than the request wants (misc).
+	 * Each slot needs space for a pointer to a swapdev.
+	 */
+	sdpsize = (size_t)slots * sizeof sdp;
+
+	/*
+	 * Borrow from kmem_tmpbuf_alloc(9) but don't use that
+	 * so we don't need to do the unlock dance unnecessarily
+	 */
+	if (sdpsize <= sizeof stackbuf) {
+		/* Should be the common case */
+		sdps = stackbuf;
+	} else {
+		rw_exit(&swap_syscall_lock);
+
+		sdps = kmem_alloc(sdpsize, KM_SLEEP);
+
+		rw_enter(&swap_syscall_lock, RW_READER);
+
+		/*
+		 * At this point, 3 possibilities.
+		 *
+		 * 1. uvmexp.nswapdev has increased.
+		 *
+		 * A new swap device got added.  That's OK, just ignore the
+		 * excess device(s), and return the first N (the number that
+		 * were there when we started).
+		 *
+		 * 2. uvmexp.nswapdev has decreased.
+		 *
+		 * A swap device was deleted.  In this case we will return
+		 * less devices than requested but that's OK.  We will have
+		 * more slot memory than is needed to save them all, but just
+		 * a little more, and it gets freed just below.
+		 *
+		 * 3. uvmexp.nswapdev hasn't changed.
+		 *
+		 * This will be the usual case; no swapctl operations occurred
+		 * while the lock was released, or possibly a device was
+		 * deleted and another added - that's irrelevant.  At this
+		 * point all that matters is the number of devices, we haven't
+		 * looked at the lists yet.
+		 *
+		 * So we never need to adjust this allocation.
+		 *
+		 * And we don't need to look at uvmexp.nswapdev again!
+		 */
+	}
 
 	KASSERT(rw_lock_held(&swap_syscall_lock));
 
+	/*
+	 * Collect all of the swap descriptors, while holding the data lock,
+	 * so the lists cannot change.   Then they can be used safely.
+	 *
+	 * Entries cannot be deleted, because swap_syscall_lock is held,
+	 * but the lists holding them can be reordered except in this small
+	 * loop where we lock out that kind of activity.   No processing
+	 * happens here, this is fast, with no func calls, or anything which
+	 * might perform operations which might need the lock.
+	 */
+	mutex_enter(&uvm_swap_data_lock);
+	sp = sdps;
+	count = 0;
 	LIST_FOREACH(spp, &swap_priority, spi_swappri) {
 		TAILQ_FOREACH(sdp, &spp->spi_swapdev, swd_next) {
-			int inuse;
-
-			if (misc-- <= 0)
-				break;
-
-			inuse = btodb((uint64_t)sdp->swd_npginuse <<
-			    PAGE_SHIFT);
-
-			memset(&sep, 0, sizeof(sep));
-			swapent_cvt(&sep, sdp, inuse);
-			if (f)
-				(*f)(&sep, &sep);
-			if ((error = copyout(&sep, ptr, len)) != 0)
-				return error;
-			ptr += len;
-			count++;
+			if (++count <= slots)
+				*sp++ = sdp;
+			/*
+			 * don't bother with exiting the loops early,
+			 * the lists tend to be very short, and not
+			 * exhausting them is a very rare occurrence.
+			 * So just loop and do nothing (but count) in
+			 * the odd case we could have broken out early.
+			 */
 		}
 	}
+	mutex_exit(&uvm_swap_data_lock);
+
+	/*
+	 * Now we have a stable list of devices which cannot change,
+	 * even if the swapping lists are reordered.
+	 */
+
+	if (misc > slots)		/* the number of storage slots */
+		misc = slots;
+	if (misc > count)		/* the number of devices now */
+		misc = count;
+
+	/*
+	 * This is the actual work of uvm_swap_stats() - above was bookkeeping.
+	 */
+	error = 0;
+	count = 0;
+	sp = sdps;
+	while (misc-- > 0) {
+		int inuse;
+
+		sdp = *sp++;	/* The next swapdev, from the next slot */
+
+		inuse = btodb((uint64_t)sdp->swd_npginuse <<
+		    PAGE_SHIFT);
+
+		memset(&sep, 0, sizeof(sep));
+		swapent_cvt(&sep, sdp, inuse);
+		if (f)
+			(*f)(&sep, &sep);
+		if ((error = copyout(&sep, ptr, len)) != 0)
+			goto out;
+		ptr += len;
+		count++;
+	}
 	*retval = count;
-	return 0;
+   out:;
+	if (sdps != stackbuf) {
+		/*
+		 * XXX should unlock & lock again here probably,
+		 *     but for now, no...
+		 */
+		kmem_free(sdps, sdpsize);
+	}
+	return error;
 }
 
 /*
@@ -941,7 +1063,7 @@ swap_on(struct lwp *l, struct swapdev *sdp)
 		goto bad;
 	}
 
-	UVMHIST_LOG(pdhist, "  dev=%#jx: size=%jd addr=%jd", dev, size, addr, 0);
+	UVMHIST_LOG(pdhist,"  dev=%#jx: size=%jd addr=%jd", dev, size, addr, 0);
 
 	/*
 	 * now we need to allocate an extent to manage this swap device
@@ -1060,7 +1182,8 @@ swap_off(struct lwp *l, struct swapdev *sdp)
 	int error = 0;
 
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pdhist, "  dev=%#jx, npages=%jd", sdp->swd_dev,npages, 0, 0);
+	UVMHIST_CALLARGS(pdhist,
+	    "  dev=%#jx, npages=%jd", sdp->swd_dev,npages, 0, 0);
 
 	KASSERT(rw_write_held(&swap_syscall_lock));
 	KASSERT(mutex_owned(&uvm_swap_data_lock));
@@ -1120,6 +1243,9 @@ swap_off(struct lwp *l, struct swapdev *sdp)
 
 	mutex_enter(&uvm_swap_data_lock);
 	uvmexp.swpages -= npages;
+	KASSERTMSG(uvmexp.swpginuse >= sdp->swd_npgbad,
+		   "swpginuse %d sdp->swd_npgbad %d",
+		   uvmexp.swpginuse, sdp->swd_npgbad);
 	uvmexp.swpginuse -= sdp->swd_npgbad;
 
 	if (swaplist_find(sdp->swd_vp, true) == NULL)
@@ -1305,7 +1431,8 @@ static int
 swread(dev_t dev, struct uio *uio, int ioflag)
 {
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pdhist, "  dev=%#jx offset=%#jx", dev, uio->uio_offset, 0, 0);
+	UVMHIST_CALLARGS(pdhist,
+	    "  dev=%#jx offset=%#jx", dev, uio->uio_offset, 0, 0);
 
 	return (physio(swstrategy, NULL, dev, B_READ, minphys, uio));
 }
@@ -1318,7 +1445,8 @@ static int
 swwrite(dev_t dev, struct uio *uio, int ioflag)
 {
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pdhist, "  dev=%#jx offset=%#jx", dev, uio->uio_offset, 0, 0);
+	UVMHIST_CALLARGS(pdhist,
+	    "  dev=%#jx offset=%#jx", dev, uio->uio_offset, 0, 0);
 
 	return (physio(swstrategy, NULL, dev, B_WRITE, minphys, uio));
 }
@@ -1802,6 +1930,8 @@ uvm_swap_free(int startslot, int nslots)
 	KASSERT(sdp->swd_npginuse >= nslots);
 	blist_free(sdp->swd_blist, startslot - sdp->swd_drumoffset, nslots);
 	sdp->swd_npginuse -= nslots;
+	KASSERTMSG(uvmexp.swpginuse >= nslots, "swpginuse %d nslots %d",
+		   uvmexp.swpginuse, nslots);
 	uvmexp.swpginuse -= nslots;
 	mutex_exit(&uvm_swap_data_lock);
 }
@@ -1866,7 +1996,8 @@ uvm_swap_io(struct vm_page **pps, int startslot, int npages, int flags)
 	int	error, mapinflags;
 	bool write, async, swap_encrypt;
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(pdhist, "<- called, startslot=%jd, npages=%jd, flags=%#jx",
+	UVMHIST_CALLARGS(pdhist,
+	    "<- called, startslot=%jd, npages=%jd, flags=%#jx",
 	    startslot, npages, flags, 0);
 
 	write = (flags & B_READ) == 0;

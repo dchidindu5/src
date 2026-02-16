@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_motorola.c,v 1.89 2024/01/19 03:35:31 thorpej Exp $        */
+/*	$NetBSD: pmap_motorola.c,v 1.101 2025/12/04 02:55:24 thorpej Exp $        */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -120,16 +120,17 @@
 #include "opt_m68k_arch.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap_motorola.c,v 1.89 2024/01/19 03:35:31 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_motorola.c,v 1.101 2025/12/04 02:55:24 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/pool.h>
 #include <sys/cpu.h>
+#ifndef __HAVE_M68K_BROKEN_RMC
 #include <sys/atomic.h>
+#endif
 
-#include <machine/pte.h>
 #include <machine/pcb.h>
 
 #include <uvm/uvm.h>
@@ -217,7 +218,7 @@ int pmapdebug = PDB_PARANOIA;
  * convert to an m68k protection code.
  */
 #define pte_prot(m, p)	(protection_codes[p])
-u_int	protection_codes[8];
+static u_int protection_codes[8];
 
 /*
  * Kernel page table page management.
@@ -254,7 +255,6 @@ vaddr_t		lwp0uarea;	/* lwp0 u-area VA, initialized in bootstrap */
 
 paddr_t		avail_start;	/* PA of first available physical page */
 paddr_t		avail_end;	/* PA of last available physical page */
-vsize_t		mem_size;	/* memory size in bytes */
 vaddr_t		virtual_avail;  /* VA of first avail page (after kernel bss)*/
 vaddr_t		virtual_end;	/* VA of last avail page (end of kernel AS) */
 int		page_cnt;	/* number of pages managed by VM system */
@@ -265,11 +265,9 @@ vaddr_t		m68k_uptbase = M68K_PTBASE;
 
 struct pv_header {
 	struct pv_entry		pvh_first;	/* first PV entry */
-	uint16_t		pvh_attrs;	/* attributes:
+	uint32_t		pvh_attrs;	/* attributes:
 						   bits 0-7: PTE bits
 						   bits 8-15: flags */
-	uint16_t		pvh_cimappings;	/* # caller-specified CI
-						   mappings */
 };
 
 #define	PVH_CI		0x10	/* all entries are cache-inhibited */
@@ -280,7 +278,7 @@ TAILQ_HEAD(pv_page_list, pv_page) pv_page_freelist;
 int		pv_nfree;
 
 #ifdef CACHE_HAVE_VAC
-u_int		pmap_aliasmask;	/* separation at which VA aliasing ok */
+static u_int	pmap_aliasmask;	/* separation at which VA aliasing ok */
 #endif
 #if defined(M68040) || defined(M68060)
 u_int		protostfree;	/* prototype (default) free ST map */
@@ -350,25 +348,36 @@ pmap_load_urp(paddr_t urp)
 	(*pmap_load_urp_func)(urp);
 }
 
+#ifdef CACHE_HAVE_VAC
 /*
- * pmap_bootstrap_finalize:	[ INTERFACE ]
+ * pmap_init_vac:
+ *
+ *	Set up virtually-addressed cache information.  Only relevant
+ *	for the HP MMU.
+ */
+void
+pmap_init_vac(size_t vacsize)
+{
+	KASSERT(pmap_aliasmask == 0);
+	KASSERT(powerof2(vacsize));
+	pmap_aliasmask = vacsize - 1;
+}
+#endif /* CACHE_HAVE_VAC */
+
+/*
+ * pmap_bootstrap2:		[ INTERFACE ]
+ *
+ *	Phase 2 of pmap bootstrap.  (Phase 1 is system-specific.)
  *
  *	Initialize lwp0 uarea, curlwp, and curpcb after MMU is turned on,
  *	using lwp0uarea variable saved during pmap_bootstrap().
  */
-void
-pmap_bootstrap_finalize(void)
+void *
+pmap_bootstrap2(void)
 {
 
-#if !defined(amiga) && !defined(atari)
-	/*
-	 * XXX
-	 * amiga and atari have different pmap initialization functions
-	 * and they require this earlier.
-	 */
 	uvmexp.pagesize = NBPG;
 	uvm_md_init();
-#endif
 
 	/*
 	 * Initialize protection array.
@@ -402,6 +411,15 @@ pmap_bootstrap_finalize(void)
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 	curlwp = &lwp0;
 	curpcb = lwp_getpcb(&lwp0);
+
+	/*
+	 * Initialize the source/destination control registers for
+	 * movs.
+	 */
+	setsfc(FC_USERD);
+	setdfc(FC_USERD);
+
+	return (void *)lwp0uarea;
 }
 
 /*
@@ -664,33 +682,6 @@ pmap_init(void)
 }
 
 /*
- * pmap_map:
- *
- *	Used to map a range of physical addresses into kernel
- *	virtual address space.
- *
- *	For now, VM is already on, we only need to map the
- *	specified memory.
- *
- *	Note: THIS FUNCTION IS DEPRECATED, AND SHOULD BE REMOVED!
- */
-vaddr_t
-pmap_map(vaddr_t va, paddr_t spa, paddr_t epa, int prot)
-{
-
-	PMAP_DPRINTF(PDB_FOLLOW,
-	    ("pmap_map(%lx, %lx, %lx, %x)\n", va, spa, epa, prot));
-
-	while (spa < epa) {
-		pmap_enter(pmap_kernel(), va, spa, prot, 0);
-		va += PAGE_SIZE;
-		spa += PAGE_SIZE;
-	}
-	pmap_update(pmap_kernel());
-	return va;
-}
-
-/*
  * pmap_create:			[ INTERFACE ]
  *
  *	Create and return a physical map.
@@ -755,7 +746,11 @@ pmap_destroy(pmap_t pmap)
 
 	PMAP_DPRINTF(PDB_FOLLOW, ("pmap_destroy(%p)\n", pmap));
 
+#ifdef __HAVE_M68K_BROKEN_RMC
+	count = --pmap->pm_count;
+#else
 	count = atomic_dec_uint_nv(&pmap->pm_count);
+#endif
 	if (count == 0) {
 		pmap_release(pmap);
 		pool_put(&pmap_pmap_pool, pmap);
@@ -802,7 +797,11 @@ pmap_reference(pmap_t pmap)
 {
 	PMAP_DPRINTF(PDB_FOLLOW, ("pmap_reference(%p)\n", pmap));
 
+#ifdef __HAVE_M68K_BROKEN_RMC
+	pmap->pm_count++;
+#else
 	atomic_inc_uint(&pmap->pm_count);
+#endif
 }
 
 /*
@@ -1473,11 +1472,14 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	 */
 
 	npte = pa | pte_prot(pmap, prot) | PG_V | PG_W;
+	if (flags & PMAP_NOCACHE) {
+		npte |= PG_CI;
+	}
 #if defined(M68040) || defined(M68060)
 #if defined(M68020) || defined(M68030)
-	if (mmutype == MMU_68040 && (npte & PG_PROT) == PG_RW)
+	if (mmutype == MMU_68040 && (npte & (PG_PROT|PG_CI)) == PG_RW)
 #else
-	if ((npte & PG_PROT) == PG_RW)
+	if ((npte & (PG_PROT|PG_CI)) == PG_RW)
 #endif
 		npte |= PG_CCB;
 
@@ -2894,6 +2896,70 @@ _pmap_page_is_cacheable(pmap_t pmap, vaddr_t va)
 		return 0;
 
 	return (pmap_pte_ci(pmap_pte(pmap, va)) == 0) ? 1 : 0;
+}
+
+vaddr_t kernel_reloc_offset;
+
+/*
+ * pmap_init_kcore_hdr:
+ *
+ *	Initialize the m68k kernel crash dump header with information
+ *	necessary to perform KVA -> phys translations.
+ *
+ *	Returns a pointer to the crash dump RAM segment entries for
+ *	machine-specific code to initialize.
+ */
+phys_ram_seg_t *
+pmap_init_kcore_hdr(cpu_kcore_hdr_t *h)
+{
+	struct m68k_kcore_hdr *m = &h->un._m68k;
+	extern char end[];
+
+	memset(h, 0, sizeof(*h));
+
+	/*
+	 * Initialize the `dispatcher' portion of the header.
+	 */
+	strcpy(h->name, machine);
+	h->page_size = PAGE_SIZE;
+	h->kernbase = KERNBASE;
+
+	/*
+	 * Fill in information about our MMU configuration.
+	 */
+	m->mmutype     = mmutype;
+	m->sg_v        = SG_V;
+	m->sg_frame    = SG_FRAME;
+	m->sg_ishift   = SG_ISHIFT;
+	m->sg_pmask    = SG_PMASK;
+	m->sg40_shift1 = SG4_SHIFT1;
+	m->sg40_mask2  = SG4_MASK2;
+	m->sg40_shift2 = SG4_SHIFT2;
+	m->sg40_mask3  = SG4_MASK3;
+	m->sg40_shift3 = SG4_SHIFT3;
+	m->sg40_addr1  = SG4_ADDR1;
+	m->sg40_addr2  = SG4_ADDR2;
+	m->pg_v        = PG_V;
+	m->pg_frame    = PG_FRAME;
+
+	/*
+	 * Initialize pointer to kernel segment table.
+	 */
+	m->sysseg_pa = Sysseg_pa;
+
+	/*
+	 * Initialize relocation value such that:
+	 *
+	 *	pa = (va - KERNBASE) + reloc
+	 */
+	m->reloc = kernel_reloc_offset;
+
+	/*
+	 * Define the end of the relocatable range.
+	 */
+	m->relocend = (uint32_t)end;
+
+	return m->ram_segs;
 }
 
 #ifdef DEBUG

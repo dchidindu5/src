@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.122 2024/03/05 14:15:33 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.127 2025/12/20 10:51:04 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998 Darrin B. Jewell
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.122 2024/03/05 14:15:33 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.127 2025/12/20 10:51:04 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -105,6 +105,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.122 2024/03/05 14:15:33 thorpej Exp $"
 
 #include <machine/kcore.h>	/* XXX should be pulled in by sys/kcore.h */
 
+#include <next68k/dev/intiovar.h>
 #include <next68k/next68k/isr.h>
 #include <next68k/next68k/nextrom.h>
 #include <next68k/next68k/rtc.h>
@@ -130,8 +131,6 @@ struct vm_map *phys_map = NULL;
 
 paddr_t msgbufpa;		/* PA of message buffer */
 
-int	maxmem;			/* max memory per process */
-
 extern	u_int lowram;
 extern	short exframesize[];
 
@@ -145,7 +144,7 @@ int	cpu_dump(int (*)(dev_t, daddr_t, void *, size_t), daddr_t *);
 void	cpu_init_kcore_hdr(void);
 
 /* functions called from locore.s */
-void next68k_init(void);
+void machine_init(paddr_t);
 void straytrap(int, u_short);
 
 /*
@@ -180,32 +179,90 @@ int	delay_divisor = 759 / 33;  /* delay constant; assume fastest 33 MHz */
 
 /****************************************************************/
 
+#ifdef __HAVE_NEW_PMAP_68K
+const struct pmap_bootmap machine_bootmap[] = {
+	{ .pmbm_vaddr_ptr = &intiobase,
+	  .pmbm_paddr     = INTIOBASE,
+	  .pmbm_size      = INTIOSIZE,
+	  .pmbm_flags     = PMBM_F_CI },
+
+	{ .pmbm_vaddr = -1 },
+};
+#endif
+
 /*
  * Early initialization, before main() is called.
  */
 void
-next68k_init(void)
+machine_init(paddr_t nextpa)
 {
 	int i;
+
+	extern paddr_t avail_start, avail_end;
 
 	/*
 	 * Tell the VM system about available physical memory.
 	 */
-	for (i = 0; i < mem_cluster_cnt; i++) {
+	avail_start = INT_MAX;
+	avail_end = 0;
+	for (i = 0; i < VM_PHYSSEG_MAX; i++) {
+		phys_seg_list[i].ps_start =
+		    m68k_round_page(phys_seg_list[i].ps_start);
+		phys_seg_list[i].ps_end =
+		    m68k_trunc_page(phys_seg_list[i].ps_end);
+
+		phys_seg_list[i].ps_avail_start = phys_seg_list[i].ps_start;
+		phys_seg_list[i].ps_avail_end = phys_seg_list[i].ps_end;
+
 		if (phys_seg_list[i].ps_start == phys_seg_list[i].ps_end) {
-			/*
-			 * Segment has been completely gobbled up.
-			 */
+			/* Empty segment. */
 			continue;
 		}
+
 		/*
-		 * Note the index of the mem cluster is the free
-		 * list we want to put the memory on.
+		 * Initialize the mem_clusters[] array for the crash dump
+		 * code.
 		 */
-		uvm_page_physload(atop(phys_seg_list[i].ps_start),
-				  atop(phys_seg_list[i].ps_end),
-				  atop(phys_seg_list[i].ps_start),
-				  atop(phys_seg_list[i].ps_end),
+		mem_clusters[mem_cluster_cnt].start =
+		    phys_seg_list[i].ps_start;
+		mem_clusters[mem_cluster_cnt].size =
+		    phys_seg_list[i].ps_end - phys_seg_list[i].ps_start;
+		mem_cluster_cnt++;
+
+		if (i == 0) {
+			/*
+			 * Adjust first RAM segment for pages already
+			 * consumed by boot loader, kernel, and pmap
+			 * data, as well as the kernel message buffer.
+			 *
+			 * Mesage buffer is at the end of the first RAM
+			 * segment (probably because that's what mvme68k
+			 * does, for reasons that don't really apply to
+			 * the NeXT).
+			 */
+			phys_seg_list[i].ps_avail_start = nextpa;
+			phys_seg_list[i].ps_avail_end -=
+			    m68k_round_page(MSGBUFSIZE);
+			msgbufpa = phys_seg_list[i].ps_avail_end;
+		}
+
+		if (phys_seg_list[i].ps_avail_start ==
+		    phys_seg_list[i].ps_avail_end) {
+			/* Segment has been completely gobbled up. */
+			continue;
+		}
+
+		if (phys_seg_list[i].ps_avail_start < avail_start) {
+			avail_start = phys_seg_list[i].ps_avail_start;
+		}
+		if (phys_seg_list[i].ps_avail_end > avail_end) {
+			avail_end = phys_seg_list[i].ps_avail_end;
+		}
+
+		uvm_page_physload(atop(phys_seg_list[i].ps_avail_start),
+				  atop(phys_seg_list[i].ps_avail_end),
+				  atop(phys_seg_list[i].ps_avail_start),
+				  atop(phys_seg_list[i].ps_avail_end),
 				  VM_FREELIST_DEFAULT);
 	}
 
@@ -456,9 +513,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -484,61 +541,13 @@ cpu_reboot(int howto, char *bootstr)
 void
 cpu_init_kcore_hdr(void)
 {
-	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
-	struct m68k_kcore_hdr *m = &h->un._m68k;
+	phys_ram_seg_t *ram_segs = pmap_init_kcore_hdr(&cpu_kcore_hdr);
 	int i;
-	extern char end[];
 
-	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr));
-
-	/*
-	 * Initialize the `dispatcher' portion of the header.
-	 */
-	strcpy(h->name, machine);
-	h->page_size = PAGE_SIZE;
-	h->kernbase = KERNBASE;
-
-	/*
-	 * Fill in information about our MMU configuration.
-	 */
-	m->mmutype	= mmutype;
-	m->sg_v		= SG_V;
-	m->sg_frame	= SG_FRAME;
-	m->sg_ishift	= SG_ISHIFT;
-	m->sg_pmask	= SG_PMASK;
-	m->sg40_shift1	= SG4_SHIFT1;
-	m->sg40_mask2	= SG4_MASK2;
-	m->sg40_shift2	= SG4_SHIFT2;
-	m->sg40_mask3	= SG4_MASK3;
-	m->sg40_shift3	= SG4_SHIFT3;
-	m->sg40_addr1	= SG4_ADDR1;
-	m->sg40_addr2	= SG4_ADDR2;
-	m->pg_v		= PG_V;
-	m->pg_frame	= PG_FRAME;
-
-	/*
-	 * Initialize pointer to kernel segment table.
-	 */
-	m->sysseg_pa = (uint32_t)(pmap_kernel()->pm_stpa);
-
-	/*
-	 * Initialize relocation value such that:
-	 *
-	 *	pa = (va - KERNBASE) + reloc
-	 */
-	m->reloc = lowram;
-
-	/*
-	 * Define the end of the relocatable range.
-	 */
-	m->relocend = (uint32_t)end;
-
-	/*
-	 * The next68k has multiple memory segments.
-	 */
+	/* The next68k has multiple memory segments. */
 	for (i = 0; i < mem_cluster_cnt; i++) {
-		m->ram_segs[i].start = mem_clusters[i].start;
-		m->ram_segs[i].size  = mem_clusters[i].size;
+		ram_segs[i].start = mem_clusters[i].start;
+		ram_segs[i].size  = mem_clusters[i].size;
 	}
 }
 

@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.14 2024/09/28 19:35:55 christos Exp $
+	$NetBSD: syscalls.master,v 1.17 2025/11/10 15:41:37 christos Exp $
 
 ;	@(#)syscalls.master	8.1 (Berkeley) 7/19/93
 
@@ -347,7 +347,8 @@
 165	NOARGS		{ int|compat_50_sys||getrusage(int who, \
 			    struct rusage50 *rusage); }
 166	NOARGS		{ int|sys||umask(int newmask); }
-167	UNIMPL		prctl
+167	INDIR		{ int|linux_sys||__prctl(int code, \
+                                  ... void * args[LINUX_SYS_MAXSYSARGS]); }
 168	STD		{ int|linux_sys||getcpu(unsigned int *cpu, \
 			    unsigned int *node, \
 			    struct linux_getcpu_cache *tcache); }
@@ -399,7 +400,9 @@
 190	NOARGS		{ int|sys||semget(key_t key, int nsems, int semflg); }
 191	STD		{ int|linux_sys||semctl(int semid, int semnum, \
 			    int cmd, union linux_semun arg); }
-192	UNIMPL		semtimedop
+192	STD		{ int|linux_sys||semtimedop(int semid, \
+			    struct sembuf *sops, size_t nsops, \
+			    struct linux_timespec *timeout); }
 193	NOARGS		{ int|sys||semop(int semid, struct sembuf *sops, \
 			    size_t nsops); }
 #else

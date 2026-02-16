@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.17 2025/09/06 02:53:23 riastradh Exp $	*/
+/*	$NetBSD: locore.s,v 1.32 2025/12/11 11:00:57 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -75,8 +75,10 @@ ASLOCAL(tmpstk)
 /*
  * Macro to relocate a symbol, used before MMU is enabled.
  */
-#define	_RELOC(var, ar)		\
-	lea	var,ar
+#define	IMMEDIATE		#
+#define	_RELOC(var, ar)			\
+	movl	IMMEDIATE var,ar;	\
+	addl	%a5,ar
 
 #define	RELOC(var, ar)		_RELOC(_C_LABEL(var), ar)
 #define	ASRELOC(var, ar)	_RELOC(_ASM_LABEL(var), ar)
@@ -98,7 +100,24 @@ GLOBAL(kernel_text)
  */
 ASENTRY_NOPROFILE(start)
 	movw	#PSL_HIGHIPL,%sr	| no interrupts
-	movl	#0,%a5			| RAM starts at 0 (a5)
+
+	movl	#CACHE_OFF,%d0
+	movc	%d0,%cacr		| clear and disable on-chip cache(s)
+
+	/*
+	 * Determine our relocation offset.  We need this to manually
+	 * translate the virtual addresses of global references to the
+	 * physical addresses we need to use before the MMU is enabled.
+	 */
+	lea	%pc@(_ASM_LABEL(start)), %a5
+	movl	%a5,%d0			| %d0 = phys address of start
+	subl	#_ASM_LABEL(start), %d0	| %d0 -= virt address of start
+	movl	%d0, %a5		| %a5 = relocation offset
+
+	/*
+	 * NOTE: %a5 cannot be used until after the MMU is enabled; it
+	 * is used by the RELOC() macro.
+	 */
 
 	ASRELOC(tmpstk, %a0)
 	movl	%a0,%sp			| give ourselves a temporary stack
@@ -110,148 +129,84 @@ ASENTRY_NOPROFILE(start)
 1:	clrl	%a0@+
 	dbra	%d0,1b
 
-	/* XXX XXX XXX */
-	movl	#CACHE_OFF,%d0
-	movc	%d0,%cacr		| clear and disable on-chip cache(s)
-	/* XXX XXX XXX */
-
 	/*
 	 * Qemu does not pass us the symbols, so leave esym alone.
 	 * The bootinfo immediately follows the kernel.  Go parse
 	 * it to get CPU/FPU/MMU information and figure out where
 	 * the end of the loaded image really is.
 	 */
-	RELOC(bootinfo_start,%a0)
-	movl	#_C_LABEL(end),%sp@-
-	jbsr	%a0@			| bootinfo_start(end)
-	addql	#4,%sp
-
-	/*
-	 * bootinfo_start() recorded the first PA following the
-	 * bootinfo in bootinfo_end.  That represents the end of
-	 * the loaded image.  Rounding that to a page gives us
-	 * the first free physical page.
-	 */
-	RELOC(bootinfo_end,%a0)
-	movl	%a0@,%d2
-	addl	#PAGE_SIZE-1,%d2
-	andl	#PG_FRAME,%d2		| round to a page
-	movl	%d2,%a4
+	movl	#_C_LABEL(end),%a4	| end of static kernel text/data
 	addl	%a5,%a4			| convert to PA
-	pea	%a5@			| firstpa
-	pea	%a4@			| nextpa
-	RELOC(pmap_bootstrap,%a0)
-	jbsr	%a0@			| pmap_bootstrap(firstpa, nextpa)
+	pea	%a5@			| reloff
+	pea	%a4@			| endpa
+	RELOC(bootinfo_startup1,%a0)
+	jbsr	%a0@			| bootinfo_startup1(endpa, reloff)
 	addql	#8,%sp
 
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
+	/*
+	 * End of boot info returned in %d0.  That represents the
+	 * end of the loaded image.
+	 */
+	pea	%a5@			| reloff
+	movl	%d0,%sp@-		| nextpa
+	RELOC(pmap_bootstrap1,%a0)
+	jbsr	%a0@			| pmap_bootstrap1(nextpa, reloff)
+	addql	#8,%sp
+
+	/*
+	 * Updated nextpa returned in %d0.  We need to squirrel
+	 * that away in a callee-saved register to use later,
+	 * after the MMU is enabled.
+	 */
+	movl	%d0, %d7
+
+	/* NOTE: %d7 is now off-limits!! */
 
 /*
  * Enable the MMU.
- * Since the kernel is mapped logical == physical, we just turn it on.
+ * Since the kernel is mapped logical == physical, there is no prep
+ * work to do.
  */
-	RELOC(Sysseg_pa, %a0)		| system segment table addr
-	movl	%a0@,%d1		| read value (a PA)
-#if defined(M68040) || defined(M68060)
-	RELOC(mmutype, %a0)
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lnot040mmu		| no, skip
-	.long	0x4e7b1807		| movc d1,srp
-
-	RELOC(mmu_tt40, %a0)		| pointer to TT reg values
-	movl	%a0,%sp@-
-	RELOC(mmu_load_tt40,%a0)	| pass it to mmu_load_tt40()
-	jbsr	%a0@
-	addql	#4,%sp
-
-	.word	0xf4d8			| cinva bc
-	.word	0xf518			| pflusha
-	movl	#MMU40_TCR_BITS,%d0
-	.long	0x4e7b0003		| movc d0,tc
-#ifdef M68060
-	RELOC(cputype, %a0)
-	cmpl	#CPU_68060,%a0@		| 68060?
-	jne	Lnot060cache
-	movl	#1,%d0
-	.long	0x4e7b0808		| movcl d0,pcr
-	movl	#0xa0808000,%d0
-	movc	%d0,%cacr		| enable store buffer, both caches
-	jmp	Lmmuenabled
-Lnot060cache:
-#endif
-	movl	#0x80008000,%d0
-	movc	%d0,%cacr		| turn on both caches
-	jmp	Lmmuenabled
-Lnot040mmu:
-#endif /* M68040 || M68060 */
-
-#if defined(M68020) || defined(M68030)
-	RELOC(protorp, %a0)
-	movl	%d1,%a0@(4)		| segtable address
-	pmove	%a0@,%srp		| load the supervisor root pointer
-#ifdef M68030
-	RELOC(mmutype, %a0)
-	cmpl	#MMU_68030,%a0@		| 68030?
-	jne	Lno030ttr		| no, skip
-	RELOC(mmu_tt30, %a0)		| pointer to TT reg values
-	movl	%a0,%sp@-
-	RELOC(mmu_load_tt30,%a0)	| pass it to mmu_load_tt30()
-	jbsr	%a0@ 
-	addql	#4,%sp
-Lno030ttr:
-#endif /* M68030 */
-	pflusha
-	movl	#MMU51_TCR_BITS,%sp@	| value to load TC with
-	pmove	%sp@,%tc		| load it
-#endif /* M68020 || M68030 */
-Lmmuenabled:
+#include <m68k/m68k/mmu_enable.s>
 
 /*
  * Should be running mapped from this point on
  */
+Lmmuenabled:
 	lea	_ASM_LABEL(tmpstk),%sp	| re-load the temporary stack
 	jbsr	_C_LABEL(vec_init)	| initialize the vector table
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
+
 	tstl	_C_LABEL(fputype)	| Have an FPU?
-	jeq	Lenab2			| No, skip.
-	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill a1)
+	jeq	1f			| No, skip.
+	clrl	%a0@(PCB_FPCTX)		| ensure null FP context
+	pea	%a0@(PCB_FPCTX)
+	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill %a0)
 	addql	#4,%sp
-Lenab2:
+1:
 	cmpl	#MMU_68040,_C_LABEL(mmutype)	| 68040?
-	jeq	Ltbia040		| yes, cache already on
+	jeq	1f			| yes, cache already on
 	pflusha
 	movl	#CACHE_ON,%d0
 	movc	%d0,%cacr		| clear cache(s)
-	jra	Lenab3
-Ltbia040:
-	.word	0xf518
-Lenab3:
+	jra	2f
+1:
+	.word	0xf518			| pflusha
+2:
+/* final setup for C code */
+	movl	%d7,%sp@-		| push nextpa saved above
+	jbsr	_C_LABEL(machine_init)	| additional pre-main initialization
+	addql	#4,%sp
 /*
- * final setup for C code:
  * Create a fake exception frame so that cpu_lwp_fork() can copy it.
  * main() nevers returns; we exit to user mode from a forked process
  * later on.
  */
-	jbsr	_C_LABEL(virt68k_init)	| additional pre-main initialization
-#if 0
-	/*
-	 * XXX Don't do the spl0() here; when Qemu performs a reboot request,
-	 * XXX it seems to not clear pending interrupts, and so we blow up
-	 * XXX early when the new kernel starts up.
-	 */
-	movw	#PSL_LOWIPL,%sr		| lower SPL
-#endif
 	clrw	%sp@-			| vector offset/frame type
 	clrl	%sp@-			| PC - filled in by "execve"
 	movw	#PSL_USER,%sp@-		| in user mode

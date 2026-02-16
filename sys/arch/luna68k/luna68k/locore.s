@@ -1,4 +1,4 @@
-/* $NetBSD: locore.s,v 1.84 2025/07/08 11:45:25 thorpej Exp $ */
+/* $NetBSD: locore.s,v 1.96 2025/12/11 11:00:56 thorpej Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -76,11 +76,13 @@ ASLOCAL(tmpstk)
 /*
  * Macro to relocate a symbol, used before MMU is enabled.
  */
-#define	_RELOC(var,ar)		\
-	lea	var,ar;		\
+#define	IMMEDIATE		#
+#define	_RELOC(var,ar)			\
+	movl	IMMEDIATE var,ar;	\
 	addl	%a5,ar
+
 #define	RELOC(var,ar)		_RELOC(_C_LABEL(var), ar)
-#define	ASRELOC(var,ar)	_RELOC(_ASM_LABEL(var), ar)
+#define	ASRELOC(var,ar)		_RELOC(_ASM_LABEL(var), ar)
 
 BSS(lowram,4)
 BSS(esym,4)
@@ -169,11 +171,7 @@ Lstart1:
 1:	movb	%a0@+,%a1@+		| copy to bootarg
 	dbra	%d0,1b			| upto 63 characters
 
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
-/* initialize memory sizes (for pmap_bootstrap) */
+/* initialize memory sizes (for pmap_bootstrap1) */
 	RELOC(memavail,%a0)
 	movl	%a0@,%d1
 	moveq	#PGSHIFT,%d2
@@ -204,87 +202,57 @@ Lstart1:
 /* configure kernel and lwp0 VA space so we can get going */
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	RELOC(esym,%a0)			| end of static kernel test/data/syms
-	movl	%a0@,%d2
+	movl	%a0@,%a4
+	tstl	%a4
 	jne	Lstart3
 #endif
-	RELOC(end,%a0)
-	movl	%a0,%d2			| end of static kernel text/data
+	movl	#_C_LABEL(end),%a4	| end of static kernel text/data
 Lstart3:
-	addl	#PAGE_SIZE-1,%d2
-	andl	#PG_FRAME,%d2		| round to a page
-	movl	%d2,%a4
 	addl	%a5,%a4			| convert to PA
-	pea	%a5@			| firstpa
+	pea	%a5@			| reloff
 	pea	%a4@			| nextpa
-	RELOC(pmap_bootstrap,%a0)
-	jbsr	%a0@			| pmap_bootstrap(firstpa, nextpa)
+	RELOC(pmap_bootstrap1,%a0)
+	jbsr	%a0@			| pmap_bootstrap1(nextpa, reloff)
 	addql	#8,%sp
+
+	/*
+	 * Updated nextpa returned in %d0.  We need to squirrel
+	 * that away in a callee-saved register to use later,
+	 * after the MMU is enabled.
+	 */
+	movl	%d0, %d7
+
+	/* NOTE: %d7 is now off-limits!! */
+
 /*
  * Enable the MMU.
- * Since the kernel is mapped logical == physical, we just turn it on.
+ * Since the kernel is mapped logical == physical, there is no prep
+ * work to do.
  */
-	RELOC(Sysseg_pa,%a0)		| system segment table addr
-	movl	%a0@,%d1		| read value (a PA)
-#if defined(M68040)
-	RELOC(mmutype,%a0)
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu1		| no, skip
-Lmotommu0:
-	.long	0x4e7b1807		| movc %d1,%srp
+#include <m68k/m68k/mmu_enable.s>
 
-	RELOC(mmu_tt40, %a0)		| pointer to TT reg values
-	movl	%a0,%sp@-
-	RELOC(mmu_load_tt40,%a0)	| pass it to mmu_load_tt40()
-	jbsr	%a0@
-	addql	#4,%sp
-
-	.word	0xf4d8			| cinva bc
-	.word	0xf518			| pflusha
-	RELOC(proto040tc,%a0)
-	movl	%a0@,%d0
-	.long	0x4e7b0003		| movc %d0,%tc
-	movl	#CACHE40_ON,%d0
-	movc	%d0,%cacr		| turn on both caches
-	jmp	Lenab1
-Lmotommu1:
-#endif
-	RELOC(protorp,%a0)
-	movl	%d1,%a0@(4)		| segtable address
-	pmove	%a0@,%srp		| load the supervisor root pointer
-
-#ifdef M68030
-	RELOC(mmu_tt30, %a0)		| pointer to TT reg values
-	movl	%a0,%sp@-
-	RELOC(mmu_load_tt30,%a0)	| pass it to mmu_load_tt30()
-	jbsr	%a0@
-	addql	#4,%sp
-#endif
-
-	pflusha
-	RELOC(prototc,%a0)		| %tc: SRP,CRP,4KB or 8KB page
-	pmove	%a0@,%tc
 /*
  * Should be running mapped from this point on
  */
-Lenab1:
+Lmmuenabled:
 	lea	_ASM_LABEL(tmpstk),%sp	| re-load temporary stack
 	jbsr	_C_LABEL(vec_init)	| initialize vector table
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
 
 /* detect FPU type */
+	movl	%a0,%a5			| preserve uarea pointer
 	jbsr	_C_LABEL(fpu_probe)
 	movl	%d0,_C_LABEL(fputype)
 	tstl	_C_LABEL(fputype)	| Have an FPU?
 	jeq	Lenab2			| No, skip.
-	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill %a1)
+	clrl	%a5@(PCB_FPCTX)		| ensure null FP context
+	pea	%a5@(PCB_FPCTX)
+	jbsr	_C_LABEL(m68881_restore) | restore it
 	addql	#4,%sp
 Lenab2:
 	jbsr	_C_LABEL(_TBIA)		| invalidate TLB
@@ -297,7 +265,9 @@ Lenab2:
 Lenab3:
 
 /* final setup for C code */
-	jbsr	_C_LABEL(luna68k_init)	| additional pre-main initialization
+	movl	%d7,%sp@-		| push nextpa saved above
+	jbsr	_C_LABEL(machine_init)	| additional pre-main initialization
+	addql	#4,%sp
 
 /*
  * Create a fake exception frame that returns to user mode,
@@ -778,10 +748,6 @@ GLOBAL(mmutype)
 GLOBAL(fputype)
 	.long	FPU_68881	| default to 68881
 
-GLOBAL(prototc)
-	.long	MMU51_TCR_BITS	| %tc -- see pmap.h
-GLOBAL(proto040tc)
-	.long	MMU40_TCR_BITS	| %tc -- see pmap.h
 nullrp:
 	.long	0x7fff0001	| do-nothing MMU root pointer
 
@@ -801,12 +767,3 @@ ASGLOBAL(fulltflush)
 ASGLOBAL(fullcflush)
 	.long	0
 #endif
-
-GLOBAL(intiobase)
-	.long	0		| KVA of base of internal IO space
-GLOBAL(intiolimit)
-	.long	0		| KVA of end of internal IO space
-GLOBAL(intiobase_phys)
-	.long	0		| PA of board's I/O registers
-GLOBAL(intiotop_phys)
-	.long	0		| PA of top of board's I/O registers

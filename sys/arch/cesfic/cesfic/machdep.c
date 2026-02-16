@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.74 2024/03/05 14:15:29 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.77 2025/12/21 07:00:26 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.74 2024/03/05 14:15:29 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.77 2025/12/21 07:00:26 skrll Exp $");
 
 #include "opt_bufcache.h"
 #include "opt_ddb.h"
@@ -101,16 +101,10 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.74 2024/03/05 14:15:29 thorpej Exp $")
 /* the following is used externally (sysctl_hw) */
 char machine[] = MACHINE;		/* CPU "architecture" */
 
-/* Our exported CPU info; we can have only one. */  
+/* Our exported CPU info; we can have only one. */
 struct cpu_info cpu_info_store;
 
 struct vm_map *phys_map = NULL;
-
-/*
- * Declare these as initialized data so we can patch them.
- */
-/*int	maxmem;*/			/* max memory per process */
-extern psize_t physmem;			/* max supported memory, changes to actual */
 
 extern	u_int lowram;
 
@@ -170,7 +164,7 @@ void fic_init(void)
 int
 zs_check_kgdb(struct zs_chanstate *cs, int dev)
 {
-	
+
 	if((boothowto & RB_KDB) && (dev == makedev(10, 0)))
 		return (1);
 	return (0);
@@ -331,9 +325,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -341,9 +335,9 @@ cpu_reboot(int howto, char *bootstr)
 	/* Finally, halt/reboot the system. */
 	if (howto & RB_HALT) {
 		printf("System halted.  Hit any key to reboot.\n\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 	}
 
 	printf("rebooting...\n");
@@ -566,7 +560,7 @@ nmihand(struct frame frame)
 /*
  * cpu_exec_aout_makecmds():
  *	CPU-dependent a.out format hook for execve().
- * 
+ *
  * Determine of the given exec package refers to something which we
  * understand and, if so, set up the vmcmds for it.
  *

@@ -1,5 +1,5 @@
 #!/bin/sh
-#	$NetBSD: mknative-binutils,v 1.16 2024/06/30 16:11:11 christos Exp $
+#	$NetBSD: mknative-binutils,v 1.18 2026/02/15 15:47:46 christos Exp $
 #
 # Shell script for generating all the constants needed for a native
 # platform build of src/external/gpl3/binutils

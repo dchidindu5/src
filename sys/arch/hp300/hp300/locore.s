@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.186 2024/02/04 18:52:35 andvar Exp $	*/
+/*	$NetBSD: locore.s,v 1.200 2025/12/11 11:00:56 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1980, 1990, 1993
@@ -369,10 +369,6 @@ Lis320:
 
 Lstart1:
 	movl	#0,%a1@(MMUCMD)		| clear out MMU again
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
 /* save the first PA as bootinfo_pa to map it to a virtual address later. */
 	movl	%a5,%d0			| lowram value from ROM via boot
 	RELOC(bootinfo_pa, %a0)
@@ -391,20 +387,41 @@ Lstart1:
 /* configure kernel and lwp0 VA space so we can get going */
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	RELOC(esym,%a0)			| end of static kernel test/data/syms
-	movl	%a0@,%d5
+	movl	%a0@,%a4
+	tstl	%a4
 	jne	Lstart3
 #endif
-	movl	#_C_LABEL(end),%d5	| end of static kernel text/data
+	movl	#_C_LABEL(end),%a4	| end of static kernel text/data
 Lstart3:
-	addl	#PAGE_SIZE-1,%d5
-	andl	#PG_FRAME,%d5		| round to a page
-	movl	%d5,%a4
 	addl	%a5,%a4			| convert to PA
-	pea	%a5@			| firstpa
+	pea	%a5@			| reloff
 	pea	%a4@			| nextpa
-	RELOC(pmap_bootstrap,%a0)
-	jbsr	%a0@			| pmap_bootstrap(firstpa, nextpa)
+	RELOC(pmap_bootstrap1,%a0)
+	jbsr	%a0@			| pmap_bootstrap1(firstpa, nextpa)
 	addql	#8,%sp
+
+	/*
+	 * Updated nextpa returned in %d0.  We need to squirrel
+	 * that away in a callee-saved register to use later,
+	 * after the MMU is enabled.
+	 */
+	movl	%d0, %d7
+
+	/* NOTE: %d7 is now off-limits!! */
+
+	/*
+	 * CLKbase, MMUbase: important registers in internal IO space
+	 * accessed from assembly language.
+	 */
+	ASRELOC(intiobase,%a0)
+	movl	%a0@,%d0
+	movl	%d0,%d1
+	addl	#CLKBASE,%d1
+	RELOC(CLKbase,%a0)
+	movl	%d1,%a0@
+	addl	#MMUBASE,%d0
+	RELOC(MMUbase,%a0)
+	movl	%d0,%a0@
 
 /*
  * Prepare to enable MMU.
@@ -416,42 +433,23 @@ Lstart3:
  *
  * Is this all really necessary, or am I paranoid??
  */
-	RELOC(Sysseg_pa, %a0)		| system segment table addr
-	movl	%a0@,%d1		| read value (a PA)
-	RELOC(mmutype, %a0)
-	tstl	%a0@			| HP MMU?
-	jeq	Lhpmmu2			| yes, skip
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu1		| no, skip
-	.long	0x4e7b1807		| movc %d1,%srp
-	jra	Lstploaddone
-Lmotommu1:
-	RELOC(protorp, %a0)
-	movl	%d1,%a0@(4)		| segtable address
-	pmove	%a0@,%srp		| load the supervisor root pointer
-	jra	Lstploaddone		| done
-Lhpmmu2:
-	moveq	#PGSHIFT,%d2
-	lsrl	%d2,%d1			| convert to page frame
-	movl	%d1,INTIOBASE+MMUBASE+MMUSSTP | load in sysseg table register
-Lstploaddone:
 	lea	MAXADDR,%a2		| PA of last RAM page
 #if 0
-	ASRELOC(Lhighcode, %a1)		| addr of high code
-	ASRELOC(Lehighcode, %a3)	| end addr
+	ASRELOC(Lmmutramp_start, %a1)	| addr of high code
+	ASRELOC(Lmmutramp_end, %a3)	| end addr
 #else
 	/* don't want pc-relative addressing */
-	.word	0x43f9			| lea Lhighcode, %a1
-	.long	Lhighcode
+	.word	0x43f9			| lea Lmmutramp_start, %a1
+	.long	Lmmutramp_start
 	addl	%a5, %a1
-	.word	0x47f9			| lea Lehighcode, %a3
-	.long	Lehighcode
+	.word	0x47f9			| lea Lmmutramp_end, %a3
+	.long	Lmmutramp_end
 	addl	%a5, %a3
 #endif
-Lcodecopy:
+1:
 	movw	%a1@+,%a2@+		| copy a word
 	cmpl	%a3,%a1			| done yet?
-	jcs	Lcodecopy		| no, keep going
+	jcs	1b			| no, keep going
 	jmp	MAXADDR			| go for it!
 
 	/*
@@ -459,67 +457,57 @@ Lcodecopy:
 	 * executed in-place.  It's copied to the last page
 	 * of RAM (mapped va == pa) and executed there.
 	 */
-
-Lhighcode:
+Lmmutramp_start:
 	RELOC(mmutype, %a0)
 	tstl	%a0@			| HP MMU?
-	jeq	Lhpmmu3			| yes, skip
+	jne	1f			| no, skip
+	RELOC(Sysseg_pa, %a0)		| system segment table addr
+	movl	%a0@,%d1		| read value (a PA)
+	moveq	#PGSHIFT,%d2
+	lsrl	%d2,%d1			      | convert to page frame
+	movl	%d1,INTIOBASE+MMUBASE+MMUSSTP | load in sysseg table register
+
+	movl	#0,INTIOBASE+MMUBASE+MMUCMD        | clear external cache
+	movl	#MMU_ENAB,INTIOBASE+MMUBASE+MMUCMD | turn on MMU
+	jmp	Lmmuenabled:l		| forced not be pc-relative
+1:
 	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu2		| no, skip
+	jne	1f			| no, skip
+	/* 68040 case: un-gate FPU and caches */
 	movw	#0,INTIOBASE+MMUBASE+MMUCMD+2
 	movw	#MMU_IEN+MMU_CEN+MMU_FPE,INTIOBASE+MMUBASE+MMUCMD+2
-					| enable FPU and caches
-	moveq	#0,%d0			| ensure TT regs are disabled
-	.long	0x4e7b0004		| movc %d0,%itt0
-	.long	0x4e7b0005		| movc %d0,%itt1
-	.long	0x4e7b0006		| movc %d0,%dtt0
-	.long	0x4e7b0007		| movc %d0,%dtt1
-	.word	0xf4d8			| cinva bc
-	.word	0xf518			| pflusha
-	movl	#MMU40_TCR_BITS,%d0
-	.long	0x4e7b0003		| movc %d0,%tc
-	movl	#CACHE40_ON,%d0
-	movc	%d0,%cacr		| turn on both caches
-	jmp	Lenab1:l		| forced not be pc-relative
-Lmotommu2:
+	bra	2f
+1:
+	/* 68020/68030: un-gate 68881 and i-cache */
 	movl	#MMU_IEN+MMU_FPE,INTIOBASE+MMUBASE+MMUCMD
-					| enable 68881 and i-cache
-	pflusha
-	RELOC(prototc, %a2)
-	movl	#MMU51_TCR_BITS,%a2@	| value to load TC with
-	pmove	%a2@,%tc		| load it
-	jmp	Lenab1:l		| forced not be pc-relative
-Lhpmmu3:
-	movl	#0,INTIOBASE+MMUBASE+MMUCMD		| clear external cache
-	movl	#MMU_ENAB,INTIOBASE+MMUBASE+MMUCMD	| turn on MMU
-	jmp	Lenab1:l		| forced not be pc-relative
-Lehighcode:
-
+2:
+#include <m68k/m68k/mmu_enable.s> 
 	/*
 	 * END MMU TRAMPOLINE.  Address register %a5 is now free.
 	 */
+Lmmutramp_end:
 
 /*
  * Should be running mapped from this point on
  */
-Lenab1:
+Lmmuenabled:
 	lea	_ASM_LABEL(tmpstk),%sp	| re-load the temporary stack
 	jbsr	_C_LABEL(vec_init)	| initialize the vector table
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
 
+	movl	%a0,%a5			| preserve uarea pointer
 	jbsr	_C_LABEL(fpu_probe)
 	movl	%d0,_C_LABEL(fputype)
 	tstl	_C_LABEL(fputype)	| Have an FPU?
 	jeq	Lenab2			| No, skip.
-	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill %a1)
+	clrl	%a5@(PCB_FPCTX)		| ensure null FP context
+	pea	%a5@(PCB_FPCTX)
+	jbsr	_C_LABEL(m68881_restore) | restore it
 	addql	#4,%sp
 Lenab2:
 /* flush TLB and turn on caches */
@@ -534,7 +522,9 @@ Lenab2:
 	orl	#MMU_CEN,%a0@(MMUCMD)	| turn on external cache
 Lnocache0:
 /* Final setup for call to main(). */
-	jbsr	_C_LABEL(hp300_init)
+	movl	%d7,%sp@-		| push nextpa saved above
+	jbsr	_C_LABEL(machine_init)
+	addql	#4,%sp
 
 /*
  * Create a fake exception frame so that cpu_lwp_fork() can copy it.
@@ -1104,7 +1094,6 @@ Lbootcode:
 	movl	#0,%d0
 	movc	%d0,%cacr		| caches off
 	.long	0x4e7b0003		| movc %d0,%tc
-	movl	%d2,MAXADDR+PAGE_SIZE-4	| restore old high page contents
 	DOREBOOT
 LmotommuF:
 #endif
@@ -1119,7 +1108,6 @@ LhpmmuB:
 #if defined(M68K_MMU_HP)
 	MMUADDR(%a0)
 	movl	#0xFFFF0000,%a0@(MMUCMD)	| totally disable MMU
-	movl	%d2,MAXADDR+PAGE_SIZE-4	| restore old high page contents
 	DOREBOOT
 #endif
 Lebootcode:
@@ -1146,17 +1134,11 @@ GLOBAL(ectype)
 GLOBAL(fputype)
 	.long	FPU_68882		| default to 68882 FPU
 
-GLOBAL(prototc)
-	.long	0			| prototype translation control
-
 GLOBAL(internalhpib)
 	.long	1			| has internal HP-IB, default to yes
 
 GLOBAL(intiobase)
 	.long	0			| KVA of base of internal IO space
-
-GLOBAL(intiolimit)
-	.long	0			| KVA of end of internal IO space
 
 GLOBAL(extiobase)
 	.long	0			| KVA of base of external IO space

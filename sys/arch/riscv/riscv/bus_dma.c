@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.11 2025/09/26 07:22:20 skrll Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.15 2026/02/01 09:03:17 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2020 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #define _RISCV_NEED_BUS_DMA_BOUNCE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.11 2025/09/26 07:22:20 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.15 2026/02/01 09:03:17 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -147,14 +147,14 @@ int	_bus_dmamap_load_buffer(bus_dma_tag_t, bus_dmamap_t, void *,
  */
 static inline struct riscv_dma_range *
 _bus_dma_paddr_inrange(struct riscv_dma_range *ranges, int nranges,
-    bus_addr_t curaddr)
+    paddr_t pa)
 {
 	struct riscv_dma_range *dr;
 	int i;
 
 	for (i = 0, dr = ranges; i < nranges; i++, dr++) {
-		if (curaddr >= dr->dr_sysbase &&
-		    curaddr < (dr->dr_sysbase + dr->dr_len))
+		if (pa >= dr->dr_sysbase &&
+		    pa < dr->dr_sysbase + dr->dr_len)
 			return dr;
 	}
 
@@ -1235,7 +1235,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 			STAT_INCR(sync_coherent_postread);
 			break;
 
-		/* BUS_DMASYNC_POSTWRITE was aleady handled as a fastpath */
+		/* BUS_DMASYNC_POSTWRITE was already handled as a fastpath */
 		}
 
 		/*
@@ -1718,46 +1718,6 @@ _bus_dmamem_alloc_range(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 
 	*rsegs = curseg + 1;
 
-	return 0;
-}
-
-/*
- * Check if a memory region intersects with a DMA range, and return the
- * page-rounded intersection if it does.
- */
-int
-riscv_dma_range_intersect(struct riscv_dma_range *ranges, int nranges,
-    paddr_t pa, psize_t size, paddr_t *pap, psize_t *sizep)
-{
-	struct riscv_dma_range *dr;
-	int i;
-
-	if (ranges == NULL)
-		return 0;
-
-	for (i = 0, dr = ranges; i < nranges; i++, dr++) {
-		if (dr->dr_sysbase <= pa &&
-		    pa < (dr->dr_sysbase + dr->dr_len)) {
-			/*
-			 * Beginning of region intersects with this range.
-			 */
-			*pap = trunc_page(pa);
-			*sizep = round_page(uimin(pa + size,
-			    dr->dr_sysbase + dr->dr_len) - pa);
-			return 1;
-		}
-		if (pa < dr->dr_sysbase && dr->dr_sysbase < (pa + size)) {
-			/*
-			 * End of region intersects with this range.
-			 */
-			*pap = trunc_page(dr->dr_sysbase);
-			*sizep = round_page(uimin((pa + size) - dr->dr_sysbase,
-			    dr->dr_len));
-			return 1;
-		}
-	}
-
-	/* No intersection found. */
 	return 0;
 }
 

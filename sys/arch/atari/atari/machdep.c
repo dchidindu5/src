@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.191 2024/03/05 14:15:29 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.194 2025/12/20 10:51:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.191 2024/03/05 14:15:29 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.194 2025/12/20 10:51:01 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -169,6 +169,8 @@ consinit(void)
 #endif
 }
 
+vsize_t		mem_size;
+
 /*
  * cpu_startup: allocate memory for variable-sized tables,
  * initialize CPU, and do autoconfiguration.
@@ -182,7 +184,6 @@ cpu_startup(void)
 	int opmapdebug = pmapdebug;
 #endif
 	vaddr_t minaddr, maxaddr;
-	extern vsize_t mem_size;	/* from pmap.c */
 
 #ifdef DEBUG
 	pmapdebug = 0;
@@ -338,7 +339,6 @@ cpu_reboot(int howto, char *bootstr)
 	/*NOTREACHED*/
 }
 
-#define	BYTES_PER_DUMP	PAGE_SIZE	/* Must be a multiple of PAGE_SIZE */
 static vaddr_t	dumpspace;	/* Virt. space to map dumppages	*/
 
 /*
@@ -349,7 +349,7 @@ reserve_dumppages(vaddr_t p)
 {
 
 	dumpspace = p;
-	return p + BYTES_PER_DUMP;
+	return p + PAGE_SIZE;
 }
 
 uint32_t	dumpmag  = 0x8fca0101;	/* magic number for savecore	*/
@@ -427,9 +427,9 @@ dumpsys(void)
 
 #if defined(DDB) || defined(PANICWAIT)
 	printf("Do you want to dump memory? [y]");
-	cnpollc(1);
+	cnpollc(true);
 	i = cngetc();
-	cnpollc(0);
+	cnpollc(false);
 	cnputc(i);
 	switch (i) {
 	case 'n':
@@ -470,17 +470,18 @@ dumpsys(void)
 				printf_nolog("%d ", n / (1024 * 1024));
 
 			/*
-			 * Limit transfer to BYTES_PER_DUMP
+			 * Limit transfer to PAGE_SIZE
 			 */
-			if (n > BYTES_PER_DUMP)
-				n = BYTES_PER_DUMP;
+			if (n > PAGE_SIZE)
+				n = PAGE_SIZE;
 
 			/*
 			 * Map to a VA and write it
 			 */
 			if (maddr != 0) { /* XXX kvtop chokes on this	*/
-				(void)pmap_map(dumpspace, maddr, maddr + n,
-				    VM_PROT_READ);
+				pmap_enter(pmap_kernel(), dumpspace, maddr,
+				    VM_PROT_READ, VM_PROT_READ|PMAP_WIRED);
+				pmap_update(pmap_kernel());
 				error = (*dump)(dumpdev, blkno,
 				    (void *)dumpspace, n);
 				if (error)

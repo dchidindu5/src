@@ -1,4 +1,4 @@
-/*	$NetBSD: elf32.c,v 1.10 2013/10/19 17:10:17 christos Exp $	*/
+/*	$NetBSD: elf32.c,v 1.12 2025/12/20 16:13:21 jkoshy Exp $	*/
 
 /*-
  * Copyright (c) 2006 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
 
 #include <sys/cdefs.h>
 #if !defined(lint)
-__RCSID("$NetBSD: elf32.c,v 1.10 2013/10/19 17:10:17 christos Exp $");
+__RCSID("$NetBSD: elf32.c,v 1.12 2025/12/20 16:13:21 jkoshy Exp $");
 #endif
 
 #ifndef ELFSIZE

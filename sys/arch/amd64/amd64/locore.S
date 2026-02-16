@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.233 2025/09/09 11:34:25 bouyer Exp $	*/
+/*	$NetBSD: locore.S,v 1.236 2026/01/17 10:53:19 bouyer Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -1187,7 +1187,69 @@ ENTRY(start_pvh)
 	shrl $2, %ecx
 	rep movsl
 
-	/* Copy cmdline_paddr after hvm_start_info */
+	/* Copy hvm_modlist_entry[] after hvm_start_info */
+	xor %ecx, %ecx
+	mov %ecx, START_INFO_MODLIST_PADDR(%eax)
+	movl START_INFO_NR_MODULES(%eax), %ecx	/* Get nr_modules */
+	testl %ecx, %ecx			/* if(nr_modules == 0) */
+	jz .modlist_copy_done			/*   goto modlist_copy_done */
+	movl %edi, START_INFO_MODLIST_PADDR(%eax) /* Set new modlist_paddr in hvm_start_info */
+	movl START_INFO_MODLIST_PADDR(%ebx), %esi
+	pushl %eax
+	movl $HVM_MODLIST_ENTRY_SIZE, %eax	/* eax = sizeof(hvm_modlist_entry) */
+	mull %ecx				/* eax * ecx => edx:eax */
+	movl %eax, %ecx
+	shrl $2, %ecx
+	rep movsl
+	popl %eax
+
+	/* Copy the modules after the hvm_modlist_entry[] */
+	xorl %ecx, %ecx				/* ecx = i = 0 */
+.module_copy:
+	/* eax points to our hvm_start_info */
+	/* ecx is our counter (i) */
+	/* Copy the module */
+	movl START_INFO_MODLIST_PADDR(%eax), %edx /* edx = &hvm_modlist_entry[0] */
+	pushl %eax
+	movl $HVM_MODLIST_ENTRY_SIZE, %eax	/* eax = sizeof(hvm_modlist_entry) */
+	pushl %ecx
+	pushl %edx
+	mull %ecx				/* eax * ecx => edx:eax */
+	popl %edx
+	addl %eax, %edx				/* edx = &hvm_modlist_entry[i] */
+	popl %ecx
+	/* Copy the module's cmdline */
+	movl MODLIST_ENTRY_CMDLINE(%edx), %esi
+	xorl %eax, %eax
+	movl %eax, MODLIST_ENTRY_CMDLINE(%edx)	/* hvm_modlist_entry[i].cmdline = NULL */
+	cmpl %eax, %esi
+	popl %eax
+	je .module_cmdline_copy_done
+	movl %edi, MODLIST_ENTRY_CMDLINE(%edx)	/* Set new cmdline_paddr in hvm_modlist_entry */
+	pushl %eax
+.module_cmdline_copy:
+	movb (%esi), %al
+	movsb
+	cmp $0, %al
+	jne .module_cmdline_copy
+	popl %eax
+.module_cmdline_copy_done:
+	/* Copy the module's content */
+	movl MODLIST_ENTRY_PADDR(%edx), %esi	/* esi = hvm_modlist_entry[i].paddr */
+	movl %edi, MODLIST_ENTRY_PADDR(%edx)	/* Set new paddr in hvm_modlist_entry */
+	pushl %ecx
+	movl MODLIST_ENTRY_SIZE(%edx), %ecx	/* ecx = hvm_modlist_entry[i].size */
+	rep movsb
+	popl %ecx
+	inc %ecx				/* i++ */
+	pushl %eax
+	movl START_INFO_NR_MODULES(%ebx), %eax	/* eax = nr_modules */
+	cmpl %eax, %ecx				/* if (ecx != nr_modules) */
+	popl %eax
+	jne .module_copy			/*   goto module_copy */
+.modlist_copy_done:
+
+	/* Copy cmdline_paddr after the modules */
 	movl CMDLINE_PADDR(%ebx), %esi
 	movl %edi, CMDLINE_PADDR(%eax)	/* Set new cmdline_paddr in hvm_start_info */
 .cmdline_copy:
@@ -1243,7 +1305,7 @@ ENTRY(start_pvh)
 
 .same_hvm_info:
 	/* just use the provided %ebx */
-	/* XXX assume hvm_start_info+dependant structure fits in a single page */
+	/* XXX assume hvm_start_info+dependent structure fits in a single page */
 	movl %ebx, %eax
 	movl %ebx, %edi
 	addl	$PAGE_SIZE, %edi
@@ -1396,7 +1458,7 @@ ENTRY(cpu_switchto)
 #ifdef XENPV
 	/* if we are there, we're obviously not in user context.
 	 * reset ci_xen_clockf_* in case the splx() at the end of mi_switch()
-	 * triggers a deffered call do xen_timer_handler()
+	 * triggers a deferred call do xen_timer_handler()
 	 */
 	movb    $0, CPUVAR(XEN_CLOCKF_USERMODE)
 	movq    $_C_LABEL(cpu_switchto), CPUVAR(XEN_CLOCKF_PC)
@@ -1579,7 +1641,7 @@ ENTRY(handle_syscall)
 	 * to ensure we don't take an interrupt with some of the user
 	 * registers loaded.
 	 */
-	CLI(si)
+	CLI2(si, rax)
 	/* Check for ASTs on exit to user mode. */
 	movl	L_MD_ASTPENDING(%r14),%eax
 	orl	CPUVAR(WANT_PMAPLOAD),%eax
@@ -1706,7 +1768,9 @@ IDTVEC(\name)
 	 * But it didn't disable events
 	 */
 	pushq	%rsi
-	CLI(si)
+	pushq	%rdi
+	CLI2(si, rdi)
+	popq	%rdi
 	popq	%rsi
 	addq	$0x10,%rsp	/* gap to match cs:rip */
 	pushq	$2		/* error code */
@@ -1751,7 +1815,9 @@ IDTVEC_END(syscall32)
 IDTVEC(osyscall)
 #ifdef XENPV
 	pushq	%rsi
-	CLI(si)
+	pushq	%rdi
+	CLI2(si, rdi)
+	popq	%rdi
 	popq	%rsi
 	movq (%rsp),%rcx
 	movq 8(%rsp),%r11
@@ -2022,7 +2088,7 @@ ENTRY(selfreloc_start)
 .Lcopy_done:
 	cld			/* LynxOS depends on it */
 
-	/* load current selfreloc_start addesss in $edi */
+	/* load current selfreloc_start address in $edi */
 	movl	%ebx, %edi	/* loadaddr was saved in ebx */
 	addl	$(selfreloc_start - kernel_text), %edi
 

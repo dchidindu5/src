@@ -1,4 +1,4 @@
-/* $NetBSD: linux_systrace_args.c,v 1.13 2024/09/28 19:36:19 christos Exp $ */
+/* $NetBSD: linux_systrace_args.c,v 1.16 2025/11/10 15:41:56 christos Exp $ */
 
 /*
  * System call argument to DTrace register array conversion.
@@ -1187,6 +1187,14 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 1;
 		break;
 	}
+	/* linux_sys___prctl */
+	case 167: {
+		const struct linux_sys___prctl_args *p = params;
+		iarg[0] = SCARG(p, code); /* int */
+		uarg[1] = (intptr_t) SCARG(p, args[0]); /* void * */
+		*n_args = 2;
+		break;
+	}
 	/* linux_sys_getcpu */
 	case 168: {
 		const struct linux_sys_getcpu_args *p = params;
@@ -1368,6 +1376,16 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[1] = SCARG(p, semnum); /* int */
 		iarg[2] = SCARG(p, cmd); /* int */
 		uarg[3] = SCARG(p, arg); /* union linux_semun */
+		*n_args = 4;
+		break;
+	}
+	/* linux_sys_semtimedop */
+	case 192: {
+		const struct linux_sys_semtimedop_args *p = params;
+		iarg[0] = SCARG(p, semid); /* int */
+		uarg[1] = (intptr_t) SCARG(p, sops); /* struct sembuf * */
+		uarg[2] = SCARG(p, nsops); /* size_t */
+		uarg[3] = (intptr_t) SCARG(p, timeout); /* struct linux_timespec * */
 		*n_args = 4;
 		break;
 	}
@@ -3882,6 +3900,19 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* linux_sys___prctl */
+	case 167:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "void *";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* linux_sys_getcpu */
 	case 168:
 		switch(ndx) {
@@ -4161,6 +4192,25 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 3:
 			p = "union linux_semun";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* linux_sys_semtimedop */
+	case 192:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "struct sembuf *";
+			break;
+		case 2:
+			p = "size_t";
+			break;
+		case 3:
+			p = "struct linux_timespec *";
 			break;
 		default:
 			break;
@@ -5743,6 +5793,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* linux_sys___prctl */
+	case 167:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* linux_sys_getcpu */
 	case 168:
 		if (ndx == 0 || ndx == 1)
@@ -5838,6 +5893,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* linux_sys_semctl */
 	case 191:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* linux_sys_semtimedop */
+	case 192:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;

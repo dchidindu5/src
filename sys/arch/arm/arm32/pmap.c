@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.443 2024/04/13 12:28:01 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.445 2026/02/04 06:00:02 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -193,7 +193,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.443 2024/04/13 12:28:01 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.445 2026/02/04 06:00:02 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -666,8 +666,8 @@ int	pmap_needs_pte_sync;
  */
 struct pv_entry {
 	SLIST_ENTRY(pv_entry) pv_link;	/* next pv_entry */
-	pmap_t		pv_pmap;        /* pmap where mapping lies */
-	vaddr_t		pv_va;          /* virtual address for mapping */
+	pmap_t		pv_pmap;	/* pmap where mapping lies */
+	vaddr_t		pv_va;		/* virtual address for mapping */
 	u_int		pv_flags;       /* flags */
 };
 
@@ -7841,7 +7841,7 @@ pmap_pte_init_armv7(void)
 	 * visibility by subsequent translation table walks.  That means we can
 	 * map everything shareable and cached and the right thing will happen.
 	 */
-        if (__SHIFTOUT(armreg_mmfr3_read(), __BITS(23,20))) {
+	if (__SHIFTOUT(armreg_mmfr3_read(), __BITS(23,20))) {
 		pmap_needs_pte_sync = 0;
 
 		/*
@@ -8249,7 +8249,7 @@ arm_pmap_alloc_poolpage(int flags)
 void
 pmap_md_tlb_info_attach(struct pmap_tlb_info *ti, struct cpu_info *ci)
 {
-        /* nothing */
+	/* nothing */
 }
 
 int
@@ -8314,9 +8314,9 @@ pmap_unmap_poolpage(vaddr_t va)
 	cpu_idcache_wbinv_range(va, PAGE_SIZE);
 #endif
 #if defined(KERNEL_BASE_VOFFSET)
-        return va - KERNEL_BASE_VOFFSET;
+	return va - KERNEL_BASE_VOFFSET;
 #else
-        return va - KERNEL_BASE + physical_start;
+	return va - KERNEL_BASE + physical_start;
 #endif
 }
 #endif /* __HAVE_MM_MD_DIRECT_MAPPED_PHYS */

@@ -1,3 +1,5 @@
+/*	$NetBSD: arcbios_calls.S,v 1.6 2026/01/11 06:41:42 tsutsui Exp $	*/
+
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -32,7 +34,7 @@
 
 #include "assym.h"
 
-RCSID("$NetBSD: arcbios_calls.S,v 1.4 2020/05/30 03:16:31 tsutsui Exp $")
+RCSID("$NetBSD: arcbios_calls.S,v 1.6 2026/01/11 06:41:42 tsutsui Exp $")
 
 	.text
 	.set noreorder
@@ -55,6 +57,7 @@ NESTED(arcbios_4orless_args, CALLFRAME_SIZ, ra)
 	REG_S	s0, CALLFRAME_SP(sp)
 
 	PTR_L	t9, _C_LABEL(ARCBIOS)
+	nop
 	PTR_ADDU t9, t0
 	INT_L	t9, 0(t9)
 	nop
@@ -96,6 +99,7 @@ NESTED(arcbios_5to8_args, CALLFRAME2_SIZ, ra)
 #endif
 
 	PTR_L	t9, _C_LABEL(ARCBIOS)
+	nop
 	PTR_ADDU t9, t0
 	INT_L	t9, 0(t9)
 	nop

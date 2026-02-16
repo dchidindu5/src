@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.90 2025/08/15 11:36:44 skrll Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.93 2026/02/08 11:46:52 nia Exp $	*/
 
 /*
  * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.90 2025/08/15 11:36:44 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.93 2026/02/08 11:46:52 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -729,6 +729,7 @@ svm_excp_has_error(uint8_t vector)
 	case 13:	/* #GP */
 	case 14:	/* #PF */
 	case 17:	/* #AC */
+	case 21:	/* #CP */
 	case 30:	/* #SX */
 		return 1;
 	default:
@@ -1185,7 +1186,7 @@ svm_exit_io(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	exit->u.io.in = (info & SVM_EXIT_IO_IN) != 0;
 	exit->u.io.port = __SHIFTOUT(info, SVM_EXIT_IO_PORT);
 
-	if (svm_decode_assist) {
+	if (__predict_true(svm_decode_assist)) {
 		KASSERT(__SHIFTOUT(info, SVM_EXIT_IO_SEG) < 6);
 		exit->u.io.seg = __SHIFTOUT(info, SVM_EXIT_IO_SEG);
 	} else {
@@ -1818,7 +1819,8 @@ svm_vcpu_setstate_seg(const struct nvmm_x64_state_seg *seg,
 }
 
 static void
-svm_vcpu_getstate_seg(struct nvmm_x64_state_seg *seg, struct vmcb_segment *vseg)
+svm_vcpu_getstate_seg(struct nvmm_x64_state_seg *seg,
+    const struct vmcb_segment *vseg)
 {
 	seg->selector = vseg->selector;
 	seg->attrib.type = __SHIFTOUT(vseg->attrib, SVM_SEG_ATTRIB_TYPE);
@@ -2009,7 +2011,7 @@ svm_vcpu_getstate(struct nvmm_cpu *vcpu)
 	struct nvmm_comm_page *comm = vcpu->comm;
 	struct nvmm_x64_state *state = &comm->state;
 	struct svm_cpudata *cpudata = vcpu->cpudata;
-	struct vmcb *vmcb = cpudata->vmcb;
+	const struct vmcb *vmcb = cpudata->vmcb;
 	uint64_t flags;
 
 	flags = comm->state_wanted;

@@ -1,4 +1,4 @@
-/* $NetBSD: spi.c,v 1.38 2025/10/10 18:36:17 brad Exp $ */
+/* $NetBSD: spi.c,v 1.41 2026/01/17 05:33:51 skrll Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -44,7 +44,7 @@
 #include "opt_fdt.h"		/* XXX */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.38 2025/10/10 18:36:17 brad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.41 2026/01/17 05:33:51 skrll Exp $");
 
 #include "locators.h"
 
@@ -337,7 +337,26 @@ spi_attach(device_t parent, device_t self, void *aux)
 	switch (devhandle_type(device_handle(sc->sc_dev))) {
 #ifdef FDT
 	case DEVHANDLE_TYPE_OF:
+#if 0
+		/*
+		 * XXX The addition of a USB SPI controller has triggered
+		 * XXX an unfortunate situation, whereby it is attaching
+		 * XXX a SPI controller on an otherwise FDT platform (RISC-V)
+		 * XXX that does not happen to currently have any platform
+		 * XXX SoC SPI controller drivers that carry the fdt_spi
+		 * XXX config attribute that would pull in the function
+		 * XXX being called here.
+		 * XXX
+		 * XXX As it happens we can fairly safely elide this call
+		 * XXX because, at the moment (1 Dec 2025), there are no
+		 * XXX consumers of the registration it performs.  However,
+		 * XXX this points to a larger problem if needed a way to
+		 * XXX resolve these situations at runtime with some sort
+		 * XXX of "platform" abstraction rather than at kernel build
+		 * XXX time.
+		 */
 		fdtbus_register_spi_controller(self, sc->sc_controller);
+#endif
 		break;
 #endif /* FDT */
 	default:
@@ -358,6 +377,18 @@ spi_attach(device_t parent, device_t self, void *aux)
 	/* Then do any other devices the user may have manually wired */
 	config_search(self, NULL,
 	    CFARGS(.search = spi_search));
+}
+
+static int
+spi_detach(device_t self, int flags)
+{
+	int error;
+
+	error = config_detach_children(self, flags);
+	if (error)
+		return error;
+
+	return 0;
 }
 
 static int
@@ -458,7 +489,7 @@ spi_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 }
 
 CFATTACH_DECL_NEW(spi, sizeof(struct spi_softc),
-    spi_match, spi_attach, NULL, NULL);
+    spi_match, spi_attach, spi_detach, NULL);
 
 /*
  * Configure.  This should be the first thing that the SPI driver

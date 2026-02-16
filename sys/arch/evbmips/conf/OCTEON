@@ -1,11 +1,11 @@
-#	$NetBSD: OCTEON,v 1.14 2024/01/29 18:27:11 christos Exp $
+#	$NetBSD: OCTEON,v 1.17 2025/12/08 21:33:21 nia Exp $
 
 include 	"arch/mips/conf/std.octeon"
 include 	"arch/evbmips/conf/files.octeon"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"OCTEON-$Revision: 1.14 $"
+#ident 		"OCTEON-$Revision: 1.17 $"
 
 maxusers	32
 

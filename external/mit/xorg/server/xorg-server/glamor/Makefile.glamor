@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.glamor,v 1.1 2022/07/21 22:51:23 mrg Exp $
+#	$NetBSD: Makefile.glamor,v 1.3 2025/12/09 05:51:46 mrg Exp $
 
 .ifndef XORG_SERVER_GLAMOR_MAKEFILE_GLAMOR
 XORG_SERVER_GLAMOR_MAKEFILE_GLAMOR=1

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.85 2024/01/17 12:33:50 thorpej Exp $	*/
+/*	$NetBSD: locore.s,v 1.96 2025/12/11 11:02:53 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998 Darrin B. Jewell
@@ -256,28 +256,31 @@ Lis68020:
 	 */
 
 Lstart1:
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
 /* configure kernel and lwp0 VA space so we can get going */
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	RELOC(esym,%a0)			| end of static kernel test/data/syms
-	movl	%a0@,%d5
+	movl	%a0@,%a4
+	tstl	%a4
 	jne	Lstart3
 #endif
-	movl	#_C_LABEL(end),%d5	| end of static kernel text/data
+	movl	#_C_LABEL(end),%a4	| end of static kernel text/data
 
 Lstart3:
-	addl	#PAGE_SIZE-1,%d5
-	andl	#PG_FRAME,%d5		| round to a page
-	movl	%d5,%a4
 	addl	%a5,%a4			| convert to PA
-	pea	%a5@			| firstpa
+	pea	%a5@			| reloff
 	pea	%a4@			| nextpa
-	RELOC(pmap_bootstrap,%a0)
-	jbsr	%a0@			| pmap_bootstrap(firstpa,nextpa)
+	RELOC(pmap_bootstrap1,%a0)
+	jbsr	%a0@			| pmap_bootstrap1(nextpa, reloff)
 	addql	#8,%sp
+
+	/*
+	 * Updated nextpa returned in %d0.  We need to squirrel
+	 * that away in a callee-saved register to use later,
+	 * after the MMU is enabled.
+	 */
+	movl	%d0, %d7
+
+	/* NOTE: %d7 is now off-limits!! */
 
 /*
  * Prepare to enable MMU.
@@ -288,79 +291,63 @@ Lstart3:
  * turns on the MMU, then jump from the VA == PA address (at 0x40XXXXXX)
  * to the actual kernel virtual address (at 0x00XXXXXX) code via a far
  * jump instruction so that we can defeat the prefetch.
+ *
+ * The TT register values are pre-initialized in the mmu_tt{30,40}[]
+ * arrays (see genassym.cf) and loaded from there before the MMU is
+ * turned on.
  */
-	RELOC(Sysseg_pa, %a0)		| system segment table addr
-	movl	%a0@,%d1		| read value (a PA)
-
-	RELOC(mmutype, %a0)
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu1		| no, skip
-	.long	0x4e7b1807		| movc %d1,%srp
-	jra	Lstploaddone
-Lmotommu1:
-#ifdef M68030
-	RELOC(protorp, %a0)
-	movl	%d1,%a0@(4)		| segtable address
-	pmove	%a0@,%srp		| load the supervisor root pointer
-#endif /* M68030 */
-
-Lstploaddone:
-	RELOC(mmutype, %a0)
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu2		| no, skip
-
-	| This is a hack to get PA=KVA when turning on MMU as mentioned above.
-	| Currently this will only work on 68040's.  We should also provide
-	| %tt0 and %tt1 settings to boot 68030's later.
-	movel	#NEXT68K_TT40_IO,%d0	| see pmap.h
-	.long	0x4e7b0004		| movc %d0,%itt0
-	.long	0x4e7b0006		| movc %d0,%dtt0
-	movel	#NEXT68K_TT40_KERN,%d0	| see pmap.h
-	.long	0x4e7b0005		| movc %d0,%itt1
-	.long	0x4e7b0007		| movc %d0,%dtt1
-
-	.word	0xf4d8			| cinva bc
-	.word	0xf518			| pflusha
-	movl	#MMU40_TCR_BITS,%d0
-	.long	0x4e7b0003		| movc %d0,%tc
-	movl	#0x80008000,%d0
-	movc	%d0,%cacr		| turn on both caches
-
-	jmp     Lturnoffttr:l		| global jump into mapped memory.
-Lturnoffttr:
-	moveq	#0,%d0			| ensure TT regs are disabled
-	.long	0x4e7b0004		| movc %d0,%itt0
-	.long	0x4e7b0006		| movc %d0,%dtt0
-	.long	0x4e7b0005		| movc %d0,%itt1
-	.long	0x4e7b0007		| movc %d0,%dtt1
-	jmp	Lenab1
-
-Lmotommu2:
-	pflusha
-	RELOC(prototc, %a2)
-	movl	#MMU51_TCR_BITS,%a2@	| value to load TC with
-	pmove	%a2@,%tc		| load it
-	jmp	Lenab1:l		| force absolute (not pc-relative) jmp
+#include <m68k/m68k/mmu_enable.s>
 
 /*
  * Should be running mapped from this point on
  */
-Lenab1:
+Lmmuenabled:
+/*
+ * Now that the MMU is enabled, we need to clear out the TT value
+ * arrays (so no other code gets confused and thinks we're using them)
+ * and disable the TT registers.
+ */
+	lea	_ASM_LABEL(tmpstk),%sp	| re-load temporary stack
+	moveq	#0,%d0
+#ifdef M68030
+	lea	_C_LABEL(mmu_tt30),%a0	| zap the 2 '030 TT slots
+	movl	%d0,%a0@+
+	movl	%d0,%a0@+
+#endif
+#ifdef M68040
+	lea	_C_LABEL(mmu_tt40),%a0	| zap the 4 '040 TT slots
+	movl	%d0,%a0@+
+	movl	%d0,%a0@+
+	movl	%d0,%a0@+
+	movl	%d0,%a0@+
+	cmpl	#MMU_68040,_C_LABEL(mmutype)
+	jne	1f
+	/* disable '040 TTs */
+	pea	_C_LABEL(mmu_tt40)
+	jbsr	_C_LABEL(mmu_load_tt40)
+	jra	2f
+1:
+#endif
+#ifdef M68030
+	/* disable '030 TTs */
+	pea	_C_LABEL(mmu_tt30)
+	jbsr	_C_LABEL(mmu_load_tt30)
+#endif
+2:
 	lea	_ASM_LABEL(tmpstk),%sp	| re-load temporary stack
 	jbsr	_C_LABEL(vec_init)	| initialize vector table
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
 
 	tstl	_C_LABEL(fputype)	| Have an FPU?
 	jeq	Lenab2			| No, skip.
-	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill %a1)
+	clrl	%a0@(PCB_FPCTX)		| ensure null FP context
+	pea	%a0@(PCB_FPCTX)
+	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill %a0)
 	addql	#4,%sp
 Lenab2:
 	cmpl	#MMU_68040,_C_LABEL(mmutype)	| 68040?
@@ -372,8 +359,9 @@ Lenab2:
 Ltbia040:
 	.word	0xf518			| pflusha
 Lenab3:
-
-	jbsr	_C_LABEL(next68k_init)
+	movl	%d7,%sp@-		| push nextpa saved above
+	jbsr	_C_LABEL(machine_init)
+	addql	#4,%sp
 
 /* Final setup for call to main(). */
 /*
@@ -850,10 +838,7 @@ GLOBAL(prototc)
 	.long	0		| prototype translation control
 
 GLOBAL(intiobase)
-	.long	INTIOBASE	| KVA of base of internal IO space
-
-GLOBAL(intiolimit)
-	.long	INTIOTOP	| KVA of end of internal IO space
+	.long	0		| KVA of base of internal IO space
 
 GLOBAL(fbbase)
 	.long	0		| KVA of base of framebuffer

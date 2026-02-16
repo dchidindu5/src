@@ -1,4 +1,4 @@
-#      $NetBSD: bsd.own.mk,v 1.1441 2025/10/20 14:31:40 nat Exp $
+#      $NetBSD: bsd.own.mk,v 1.1466 2026/02/16 03:55:59 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -90,19 +90,13 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE} == "amd64" || \
-    ${MACHINE} == "hppa" || \
-    ${MACHINE} == "i386" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE} == "vax" || \
-    ${MACHINE_CPU} == "aarch64" || \
-    ${MACHINE_CPU} == "arm" || \
-    ${MACHINE_CPU} == "riscv"
-HAVE_GCC?=	14
+.if ${MACHINE_CPU} == "m68k" || \
+    ${MACHINE_CPU} == "sh3" || \
+    ${MACHINE} == "alpha"
+HAVE_GCC?=	12
 .endif
 
-HAVE_GCC?=	12
+HAVE_GCC?=	14
 
 #
 # Platforms that can't run a modern GCC natively
@@ -139,13 +133,24 @@ NOGCCISL=	# defined
 .endif
 
 #
+# Build GCC with libquadmath.
+# Eg:  grep '#define HAVE_FLOAT128 1' lib/libgfortran/arch/*/config.h
+#
+.if ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "ia64"
+HAVE_QUADMATH?=	yes
+.endif
+HAVE_QUADMATH?=	no
+
+#
 # What binutils is used?
 #
 HAVE_BINUTILS?= 245
 
-.if ${HAVE_BINUTILS} == 245
+.if ${HAVE_BINUTILS} == 246
 EXTERNAL_BINUTILS_SUBDIR=	binutils
-.elif ${HAVE_BINUTILS} == 242
+.elif ${HAVE_BINUTILS} == 245
 EXTERNAL_BINUTILS_SUBDIR=	binutils.old
 .else
 EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
@@ -1276,9 +1281,17 @@ MKSTATICPIE?=	no
 #
 _MKVARS.yes= \
 	MKARGON2 \
+	MKADOSFS \
 	MKATF \
+	MKAUDIO \
+	MKAUTOFS \
+	MKBIND \
+	MKBLUETOOTH \
 	MKBINUTILS \
+	MKBSDDIFF \
 	MKBSDTAR \
+	MKCD9660FS \
+	MKCHFS \
 	MKCLEANSRC \
 	MKCLEANVERIFY \
 	MKCOMPLEX \
@@ -1287,19 +1300,28 @@ _MKVARS.yes= \
 	MKDOC \
 	MKDTC \
 	MKDYNAMICROOT \
+	MKEFS \
+	MKEXT2FS \
+	MKFDESCFS \
+	MKFIDO2 \
+	MKFILECOREFS \
 	MKGCC \
 	MKGDB \
 	MKGROFF \
 	MKHESIOD \
+	MKHFS \
 	MKHTML \
 	MKIEEEFP \
 	MKINET6 \
 	MKINFO \
 	MKIPFILTER \
+	MKIPSEC \
 	MKISCSI \
 	MKKERBEROS \
+	MKKERNFS \
 	MKKMOD \
 	MKLDAP \
+	MKLFS \
 	MKLIBSTDCXX \
 	MKLINKLIB \
 	MKLVM \
@@ -1307,23 +1329,93 @@ _MKVARS.yes= \
 	MKMAN \
 	MKMANDOC \
 	MKMDNS \
+	MKMSDOSFS \
+	MKNFS \
+	MKNILFS \
 	MKNLS \
 	MKNPF \
+	MKNTFS \
+	MKNULLFS \
 	MKOBJ \
+	MKOVERLAYFS \
 	MKPAM \
 	MKPF \
 	MKPIC \
 	MKPICLIB \
 	MKPOSTFIX \
+	MKPROCFS \
 	MKPROFILE \
+	MKPTYFS \
+	MKQEMUFWCFG \
 	MKRUMP \
 	MKSHARE \
 	MKSKEY \
+	MKSSH \
 	MKSTATICLIB \
 	MKSTRIPSYM \
+	MKSYSVBFS \
+	MKTMPFS \
+	MKUDF \
+	MKUMAPFS \
 	MKUNBOUND \
+	MKUNIONFS \
+	MKUSB \
+	MKV7FS \
+	MKWLAN \
 	MKX11FONTS \
 	MKYP
+
+#
+# Systems with MACHINE_ARCH == m68000 are extremely limited in terms
+# of available system resources.  Trim down the base set of system
+# features accordingly.
+#
+MKADOSFS.m68000?=	no
+MKAUDIO.m68000?=	no
+MKAUTOFS.m68000?=	no
+MKBIND.m68000?=		no
+MKBLUETOOTH.m68000?=	no
+MKBSDTAR.m68000?=	no
+MKCHFS.m68000?=		no
+MKDTC.m68000?=		no
+MKEFS.m68000?=		no
+MKEXT2FS.m68000?=	no
+MKFDESCFS.m68000?=	no
+MKFIDO2.m68000?=	no
+MKFILECOREFS.m68000?=	no
+MKGROFF.m68000?=	no
+MKHESIOD.m68000?=	no
+MKHFS.m68000?=		no
+MKHTML.m68000?=		no
+MKINET6.m68000?=	no
+MKIPFILTER.m68000?=	no
+MKIPSEC.m68000?=	no
+MKISCSI.m68000?=	no
+MKLDAP.m68000?=		no
+MKLFS.m68000?=		no
+MKLVM.m68000?=		no
+MKMSDOSFS.m68000?=	no
+MKNILFS.m68000?=	no
+MKNPF.m68000?=		no
+MKNTFS.m68000?=		no
+MKNULLFS.m68000?=	no
+MKOVERLAYFS.m68000?=	no
+MKPAM.m68000?=		no
+MKPF.m68000?=		no
+MKPOSTFIX.m68000?=	no
+MKPROCFS.m68000?=	no
+MKQEMUFWCFG.m68000?=	no
+MKRUMP.m68000?=		no
+MKSSH.m68000?=		no
+MKSYSVBFS.m68000?=	no
+MKTMPFS.m68000?=	no
+MKUDF.m68000?=		no
+MKUMAPFS.m68000?=	no
+MKUNBOUND.m68000?=	no
+MKUNIONFS.m68000?=	no
+MKUSB.m68000?=		no
+MKV7FS.m68000?=		no
+MKWLAN.m68000?=		no
 
 .for var in ${_MKVARS.yes}
 ${var}?=	${${var}.${MACHINE_ARCH}:U${${var}.${MACHINE}:Uyes}}
@@ -1409,9 +1501,12 @@ MKAMDGPUFIRMWARE.x86_64=	yes
 # Only install the tegra firmware on evbarm.
 MKTEGRAFIRMWARE.evbarm=		yes
 
-# Only build devicetree (dtb) files on armv6, armv7, and aarch64.
+# Only build devicetree (dtb) files on armv5, armv6, armv7, aarch64,
+# and risc-v.
 MKDTB.aarch64=			yes
 MKDTB.aarch64eb=		yes
+MKDTB.earmv5=			yes
+MKDTB.earmv5hf=			yes
 MKDTB.earmv6=			yes
 MKDTB.earmv6hf=			yes
 MKDTB.earmv6eb=			yes
@@ -1610,6 +1705,10 @@ MKMAN:=		no
 MKNLS:=		no
 .endif
 
+.if ${MKUSB} == "no"
+MKFIDO2:=	no
+.endif
+
 .if ${MACHINE_ARCH:Mearm*}
 _NEEDS_LIBCXX.${MACHINE_ARCH}=	yes
 .endif
@@ -1790,7 +1889,8 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 
 .if ${HAVE_XORG_SERVER_VER} == "120"
 XORG_SERVER_SUBDIR?=xorg-server
-. if ${MACHINE} == "amd64" || ${MACHINE} == "i386" || ${MACHINE} == "evbarm"
+. if ${MACHINE} == "amd64" || ${MACHINE} == "i386" || \
+     ${MACHINE} == "evbarm" || ${MACHINE} == "evbppc"
 HAVE_XORG_GLAMOR?=	yes
 . endif
 HAVE_XORG_EGL?=		yes

@@ -1,4 +1,4 @@
-/*	$NetBSD: seglist.h,v 1.5 2009/10/23 17:01:08 snj Exp $	*/
+/*	$NetBSD: seglist.h,v 1.7 2025/11/16 17:59:52 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1997 The Steve Woodford
@@ -39,7 +39,8 @@
 typedef struct {
 	paddr_t		ps_start;	/* Start of segment */
 	paddr_t		ps_end;		/* End of segment */
-	int		ps_startpage;	/* Page number of first page */
+	paddr_t		ps_avail_start;	/* Available start of segment */
+	paddr_t		ps_avail_end;	/* Available end of segment */
 } phys_seg_list_t;
 
 /* Instantiated in machdep.c */

@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_ipccall.c,v 1.34 2021/09/23 06:56:27 ryo Exp $	*/
+/*	$NetBSD: linux_ipccall.c,v 1.37 2025/10/27 01:39:23 kre Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_ipccall.c,v 1.34 2021/09/23 06:56:27 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_ipccall.c,v 1.37 2025/10/27 01:39:23 kre Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_sysv.h"
@@ -110,6 +110,18 @@ linux_sys_ipc(struct lwp *l, const struct linux_sys_ipc_args *uap, register_t *r
 
 		return linux_sys_semctl(l, &bsa, retval);
 	    }
+#ifdef LINUX_SYS_semtimedop
+	case LINUX_SYS_SEMTIMEDOP: {
+		struct linux_sys_semtimedop_args ua;
+
+		ua.semid = SCARG(uap, a1);
+		ua.sops = (struct sembuf *)SCARG(uap, a2);
+		ua.nsops = (size_t)SCARG(uap, a3);
+		ua.timeout = (struct linux_timespec *)SCARG(uap, ptr);
+
+		return linux_sys_semtimedop(l, &ua, retval);
+	}
+#endif
 #endif
 #ifdef SYSVMSG
 	case LINUX_SYS_MSGSND:

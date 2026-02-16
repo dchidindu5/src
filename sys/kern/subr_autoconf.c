@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.315 2025/10/03 16:49:07 thorpej Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.318 2026/01/17 02:01:39 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.315 2025/10/03 16:49:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.318 2026/01/17 02:01:39 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -85,36 +85,37 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.315 2025/10/03 16:49:07 thorpej 
 #endif
 
 #include <sys/param.h>
-#include <sys/device.h>
-#include <sys/device_impl.h>
-#include <sys/device_calls.h>
-#include <sys/disklabel.h>
-#include <sys/conf.h>
-#include <sys/kauth.h>
-#include <sys/kmem.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/errno.h>
-#include <sys/proc.h>
-#include <sys/reboot.h>
-#include <sys/kthread.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
+#include <sys/callout.h>
+#include <sys/conf.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/device_calls.h>
+#include <sys/device_impl.h>
+#include <sys/devmon.h>
 #include <sys/dirent.h>
+#include <sys/disk.h>
+#include <sys/disklabel.h>
+#include <sys/errno.h>
+#include <sys/fcntl.h>
+#include <sys/kauth.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/kthread.h>
+#include <sys/localcount.h>
+#include <sys/lockf.h>
 #include <sys/mount.h>
 #include <sys/namei.h>
-#include <sys/unistd.h>
-#include <sys/fcntl.h>
-#include <sys/lockf.h>
-#include <sys/callout.h>
-#include <sys/devmon.h>
-#include <sys/cpu.h>
-#include <sys/sysctl.h>
-#include <sys/stdarg.h>
-#include <sys/localcount.h>
-
-#include <sys/disk.h>
-
+#include <sys/proc.h>
+#include <sys/reboot.h>
 #include <sys/rndsource.h>
+#include <sys/sdt.h>
+#include <sys/stdarg.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
+#include <sys/unistd.h>
 
 #include <machine/limits.h>
 
@@ -145,6 +146,13 @@ extern struct cfdriver * const cfdriver_list_initial[];
  * Initial list of cfattach's.
  */
 extern const struct cfattachinit cfattachinit[];
+
+/*
+ * List of all cfattach interface attributes.  Kept separately from
+ * cfattaches themselves because they're extremely uncommon.
+ */
+static LIST_HEAD(, cfattachiattr) allcfattachiattrs =
+    LIST_HEAD_INITIALIZER(allcfattachiattrs);
 
 /*
  * List of cfdata tables.  We always have one such list -- the one
@@ -294,7 +302,12 @@ frob_cfdrivervec(struct cfdriver * const *cfdriverv,
 	return error;
 }
 
-typedef int (*cfattach_fn)(const char *, struct cfattach *);
+typedef int (*cfattach_fn)(const char *, struct cfattach *,
+    struct cfattachiattr * const *);
+static int config_cfattach_attach_iattrs(const char *, struct cfattach *,
+    struct cfattachiattr * const *);
+static int config_cfattach_detach_iattrs(const char *, struct cfattach *,
+    struct cfattachiattr * const *);
 static int
 frob_cfattachvec(const struct cfattachinit *cfattachv,
 	cfattach_fn att_do, cfattach_fn att_undo,
@@ -308,7 +321,7 @@ frob_cfattachvec(const struct cfattachinit *cfattachv,
 	for (cfai = &cfattachv[0]; cfai->cfai_name != NULL; cfai++) {
 		for (j = 0; cfai->cfai_list[j] != NULL; j++) {
 			if ((error = att_do(cfai->cfai_name,
-			    cfai->cfai_list[j])) != 0) {
+			    cfai->cfai_list[j], cfai->cfai_iattrs)) != 0) {
 				pr("configure: attachment `%s' "
 				    "of `%s' driver %s failed: %d",
 				    cfai->cfai_list[j]->ca_name,
@@ -336,7 +349,7 @@ frob_cfattachvec(const struct cfattachinit *cfattachv,
 				last = true;
 			for (j--; j >= 0; j--) {
 				e2 = att_undo(cfai->cfai_name,
-				    cfai->cfai_list[j]);
+				    cfai->cfai_list[j], cfai->cfai_iattrs);
 				KASSERT(e2 == 0);
 			}
 			if (!last) {
@@ -371,7 +384,7 @@ config_init(void)
 	frob_cfdrivervec(cfdriver_list_initial,
 	    config_cfdriver_attach, NULL, "bootstrap", true);
 	frob_cfattachvec(cfattachinit,
-	    config_cfattach_attach, NULL, "bootstrap", true);
+	    config_cfattach_attach_iattrs, NULL, "bootstrap", true);
 
 	initcftable.ct_cfdata = cfdata;
 	TAILQ_INSERT_TAIL(&allcftables, &initcftable, ct_list);
@@ -400,7 +413,7 @@ config_init_component(struct cfdriver * const *cfdriverv,
 	    config_cfdriver_attach, config_cfdriver_detach, "init", false))!= 0)
 		goto out;
 	if ((error = frob_cfattachvec(cfattachv,
-	    config_cfattach_attach, config_cfattach_detach,
+	    config_cfattach_attach_iattrs, config_cfattach_detach_iattrs,
 	    "init", false)) != 0) {
 		frob_cfdrivervec(cfdriverv,
 	            config_cfdriver_detach, NULL, "init rollback", true);
@@ -408,7 +421,7 @@ config_init_component(struct cfdriver * const *cfdriverv,
 	}
 	if ((error = config_cfdata_attach(cfdatav, 1)) != 0) {
 		frob_cfattachvec(cfattachv,
-		    config_cfattach_detach, NULL, "init rollback", true);
+		    config_cfattach_detach_iattrs, NULL, "init rollback", true);
 		frob_cfdrivervec(cfdriverv,
 	            config_cfdriver_detach, NULL, "init rollback", true);
 		goto out;
@@ -432,7 +445,7 @@ config_fini_component(struct cfdriver * const *cfdriverv,
 	if ((error = config_cfdata_detach(cfdatav)) != 0)
 		goto out;
 	if ((error = frob_cfattachvec(cfattachv,
-	    config_cfattach_detach, config_cfattach_attach,
+	    config_cfattach_detach_iattrs, config_cfattach_attach_iattrs,
 	    "fini", false)) != 0) {
 		if (config_cfdata_attach(cfdatav, 0) != 0)
 			panic("config_cfdata fini rollback failed");
@@ -442,7 +455,7 @@ config_fini_component(struct cfdriver * const *cfdriverv,
 	    config_cfdriver_detach, config_cfdriver_attach,
 	    "fini", false)) != 0) {
 		frob_cfattachvec(cfattachv,
-	            config_cfattach_attach, NULL, "fini rollback", true);
+	            config_cfattach_attach_iattrs, NULL, "fini rollback", true);
 		if (config_cfdata_attach(cfdatav, 0) != 0)
 			panic("config_cfdata fini rollback failed");
 		goto out;
@@ -580,7 +593,7 @@ int
 no_devmon_insert(const char *name, prop_dictionary_t p)
 {
 
-	return ENODEV;
+	return SET_ERROR(ENODEV);
 }
 
 static void
@@ -628,7 +641,7 @@ config_cfdriver_attach(struct cfdriver *cd)
 	/* Make sure this driver isn't already in the system. */
 	LIST_FOREACH(lcd, &allcfdrivers, cd_list) {
 		if (STREQ(lcd->cd_name, cd->cd_name))
-			return EEXIST;
+			return SET_ERROR(EEXIST);
 	}
 
 	LIST_INIT(&cd->cd_attach);
@@ -650,7 +663,7 @@ config_cfdriver_detach(struct cfdriver *cd)
 	/* Make sure there are no active instances. */
 	for (i = 0; i < cd->cd_ndevs; i++) {
 		if (cd->cd_devs[i] != NULL) {
-			rc = EBUSY;
+			rc = SET_ERROR(EBUSY);
 			break;
 		}
 	}
@@ -661,7 +674,7 @@ config_cfdriver_detach(struct cfdriver *cd)
 
 	/* ...and no attachments loaded. */
 	if (LIST_EMPTY(&cd->cd_attach) == 0)
-		return EBUSY;
+		return SET_ERROR(EBUSY);
 
 	LIST_REMOVE(cd, cd_list);
 
@@ -689,32 +702,50 @@ config_cfdriver_lookup(const char *name)
 /*
  * Add a cfattach to the specified driver.
  */
-int
-config_cfattach_attach(const char *driver, struct cfattach *ca)
+static int
+config_cfattach_attach_iattrs(const char *driver, struct cfattach *ca,
+    struct cfattachiattr * const *cfias)
 {
 	struct cfattach *lca;
 	struct cfdriver *cd;
 
 	cd = config_cfdriver_lookup(driver);
 	if (cd == NULL)
-		return ESRCH;
+		return SET_ERROR(ESRCH);
 
 	/* Make sure this attachment isn't already on this driver. */
 	LIST_FOREACH(lca, &cd->cd_attach, ca_list) {
 		if (STREQ(lca->ca_name, ca->ca_name))
-			return EEXIST;
+			return SET_ERROR(EEXIST);
 	}
 
 	LIST_INSERT_HEAD(&cd->cd_attach, ca, ca_list);
 
+	if (cfias != NULL) {
+		struct cfattachiattr *cfia;
+		for (; (cfia = *cfias) != NULL; cfias++) {
+			if (cfia->cfia_attach == ca) {
+				LIST_INSERT_HEAD(&allcfattachiattrs, cfia,
+				    cfia_list);
+			}
+		}
+	}
+
 	return 0;
+}
+
+int
+config_cfattach_attach(const char *driver, struct cfattach *ca)
+{
+	return config_cfattach_attach_iattrs(driver, ca, NULL);
 }
 
 /*
  * Remove a cfattach from the specified driver.
  */
 int
-config_cfattach_detach(const char *driver, struct cfattach *ca)
+config_cfattach_detach_iattrs(const char *driver, struct cfattach *ca,
+    struct cfattachiattr * const *cfias __unused)
 {
 	struct alldevs_foray af;
 	struct cfdriver *cd;
@@ -723,7 +754,7 @@ config_cfattach_detach(const char *driver, struct cfattach *ca)
 
 	cd = config_cfdriver_lookup(driver);
 	if (cd == NULL)
-		return ESRCH;
+		return SET_ERROR(ESRCH);
 
 	config_alldevs_enter(&af);
 	/* Make sure there are no active instances. */
@@ -731,7 +762,7 @@ config_cfattach_detach(const char *driver, struct cfattach *ca)
 		if ((dev = cd->cd_devs[i]) == NULL)
 			continue;
 		if (dev->dv_cfattach == ca) {
-			rc = EBUSY;
+			rc = SET_ERROR(EBUSY);
 			break;
 		}
 	}
@@ -742,7 +773,26 @@ config_cfattach_detach(const char *driver, struct cfattach *ca)
 
 	LIST_REMOVE(ca, ca_list);
 
+	/*
+	 * The cfattach is going away, so we always traverse the
+	 * list of cfattach iattrs and remove any that reference
+	 * it.  The "cfias" argument is largely due to the need
+	 * to have this fuction's signature match.
+	 */
+	struct cfattachiattr *cfia, *next_cfia;
+	LIST_FOREACH_SAFE(cfia, &allcfattachiattrs, cfia_list, next_cfia) {
+		if (cfia->cfia_attach == ca) {
+			LIST_REMOVE(cfia, cfia_list);
+		}
+	}
+
 	return 0;
+}
+
+int
+config_cfattach_detach(const char *driver, struct cfattach *ca)
+{
+	return config_cfattach_detach_iattrs(driver, ca, NULL);
 }
 
 /*
@@ -803,7 +853,8 @@ config_stdsubmatch(device_t parent, cfdata_t cf, const int *locs, void *aux)
 	const struct cflocdesc *cl;
 	int nlocs, i;
 
-	ci = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver);
+	ci = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver,
+	    parent->dv_cfattach);
 	KASSERT(ci);
 	nlocs = ci->ci_loclen;
 	KASSERT(!nlocs || locs);
@@ -841,6 +892,40 @@ cfdriver_get_iattr(const struct cfdriver *cd, const char *ia)
 	return 0;
 }
 
+/*
+ * Like above, but for attachments.
+ */
+static const struct cfiattrdata *
+cfattach_get_iattr(const struct cfattach *ca, const char *ia)
+{
+	struct cfattachiattr *cfia;
+
+	LIST_FOREACH(cfia, &allcfattachiattrs, cfia_list) {
+		if (cfia->cfia_attach == ca &&
+		    STREQ(cfia->cfia_iattr->ci_name, ia)) {
+			/* Match. */
+			return cfia->cfia_iattr;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Short-hand for looking at both the cfdriver and cfattach of a
+ * device for an interface attribute.
+ */
+static const struct cfiattrdata *
+device_get_iattr(device_t dev, const char *name)
+{
+	const struct cfiattrdata *ia;
+
+	ia = cfdriver_get_iattr(dev->dv_cfdriver, name);
+	if (ia == NULL) {
+		ia = cfattach_get_iattr(dev->dv_cfattach, name);
+	}
+	return ia;
+}
+
 static int __diagused
 cfdriver_iattr_count(const struct cfdriver *cd)
 {
@@ -861,13 +946,18 @@ cfdriver_iattr_count(const struct cfdriver *cd)
  * If the driver is given, consider only its supported attributes.
  */
 const struct cfiattrdata *
-cfiattr_lookup(const char *name, const struct cfdriver *cd)
+cfiattr_lookup(const char *name, const struct cfdriver *cd,
+    const struct cfattach *ca)
 {
 	const struct cfdriver *d;
 	const struct cfiattrdata *ia;
 
-	if (cd)
-		return cfdriver_get_iattr(cd, name);
+	if (cd) {
+		ia = cfdriver_get_iattr(cd, name);
+		if (ia == NULL)
+			ia = cfattach_get_iattr(ca, name);
+		return ia;
+	}
 
 	LIST_FOREACH(d, &allcfdrivers, cd_list) {
 		ia = cfdriver_get_iattr(d, name);
@@ -897,7 +987,7 @@ cfparent_match(const device_t parent, const struct cfparent *cfp)
 	 * First, ensure this parent has the correct interface
 	 * attribute.
 	 */
-	if (!cfdriver_get_iattr(pcd, cfp->cfp_iattr))
+	if (!device_get_iattr(parent, cfp->cfp_iattr))
 		return 0;
 
 	/*
@@ -1036,7 +1126,7 @@ config_cfdata_detach(cfdata_t cf)
 	}
 
 	/* not found -- shouldn't happen */
-	error = EINVAL;
+	error = SET_ERROR(EINVAL);
 
 out:	KERNEL_UNLOCK_ONE(NULL);
 	return error;
@@ -1145,7 +1235,7 @@ config_search_internal(device_t parent, void *aux,
 
 	KASSERT(config_initialized);
 	KASSERTMSG((!args->iattr ||
-		cfdriver_get_iattr(parent->dv_cfdriver, args->iattr)),
+		device_get_iattr(parent, args->iattr)),
 	    "%s searched for child at interface attribute %s,"
 	    " but device %s(4) has no such interface attribute in config(5)",
 	    device_xname(parent), args->iattr,
@@ -1635,7 +1725,8 @@ config_devalloc(const device_t parent, const cfdata_t cf,
 	dev->dv_flags |= DVF_ACTIVE;	/* always initially active */
 	if (args->locators) {
 		KASSERT(parent); /* no locators at root */
-		ia = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver);
+		ia = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver,
+		    parent->dv_cfattach);
 		dev->dv_locators =
 		    kmem_alloc(sizeof(int) * (ia->ci_loclen + 1), KM_SLEEP);
 		*dev->dv_locators++ = sizeof(int) * (ia->ci_loclen + 1);
@@ -2173,7 +2264,7 @@ config_detach_release(device_t dev, int flags)
 #endif /* DIAGNOSTIC */
 		config_detach_exit(dev);
 		KERNEL_UNLOCK_ONE(NULL);
-		return ENOENT;
+		return SET_ERROR(ENOENT);
 	}
 	alldevs_nwrite++;
 	mutex_exit(&alldevs_lock);
@@ -2186,11 +2277,11 @@ config_detach_release(device_t dev, int flags)
 	if (!detachall &&
 	    (flags & (DETACH_SHUTDOWN|DETACH_FORCE)) == DETACH_SHUTDOWN &&
 	    (dev->dv_flags & DVF_DETACH_SHUTDOWN) == 0) {
-		rv = EOPNOTSUPP;
+		rv = SET_ERROR(EOPNOTSUPP);
 	} else if (ca->ca_detach != NULL) {
 		rv = (*ca->ca_detach)(dev, flags);
 	} else
-		rv = EOPNOTSUPP;
+		rv = SET_ERROR(EOPNOTSUPP);
 
 	KASSERTMSG(!dev->dv_detach_done, "%s detached twice, error=%d",
 	    device_xname(dev), rv);
@@ -2681,7 +2772,7 @@ config_finalize_register(device_t dev, int (*fn)(device_t))
 	/* Ensure this isn't already on the list. */
 	TAILQ_FOREACH(f, &config_finalize_list, f_list) {
 		if (f->f_func == fn && f->f_dev == dev) {
-			error = EEXIST;
+			error = SET_ERROR(EEXIST);
 			goto out;
 		}
 	}

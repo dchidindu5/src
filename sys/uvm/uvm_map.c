@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.427 2025/04/27 17:40:55 riastradh Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.429 2025/12/11 07:25:10 andvar Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.427 2025/04/27 17:40:55 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.429 2025/12/11 07:25:10 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -3343,7 +3343,7 @@ uvm_map_inherit(struct vm_map *map, vaddr_t start, vaddr_t end,
 	if (uvm_map_lookup_entry(map, start, &temp_entry)) {
 		entry = temp_entry;
 		UVM_MAP_CLIP_START(map, entry, start);
-	}  else {
+	} else {
 		entry = temp_entry->next;
 	}
 	while ((entry != &map->header) && (entry->start < end)) {
@@ -5132,7 +5132,7 @@ uvm_voaddr_acquire(struct vm_map * const map, vaddr_t const va,
 
 /*
  * uvm_voaddr_release: release the references held by the
- * vitual object address.
+ * virtual object address.
  */
 void
 uvm_voaddr_release(struct uvm_voaddr * const voaddr)

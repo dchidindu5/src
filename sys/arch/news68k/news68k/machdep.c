@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.116 2025/06/27 21:36:23 andvar Exp $	*/
+/*	$NetBSD: machdep.c,v 1.126 2025/12/21 07:00:27 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.116 2025/06/27 21:36:23 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.126 2025/12/21 07:00:27 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_compat_netbsd.h"
@@ -116,7 +116,6 @@ int	maxmem;			/* max memory per process */
 extern paddr_t avail_start, avail_end;
 extern int end, *esym;
 extern u_int lowram;
-extern u_int ctrl_led_phys;
 
 /* prototypes for local functions */
 static void identifycpu(void);
@@ -128,7 +127,7 @@ static void cpu_init_kcore_hdr(void);
 #ifdef news1700
 static void news1700_init(void);
 static void parityenable(void);
-static void parityerror(void);
+static int parityerror(void *);
 #endif
 #ifdef news1200
 static void news1200_init(void);
@@ -136,7 +135,7 @@ static void news1200_init(void);
 
 /* functions called from locore.s */
 void dumpsys(void);
-void news68k_init(void);
+void machine_init(paddr_t);
 void straytrap(int, u_short);
 
 /*
@@ -152,11 +151,29 @@ cpu_kcore_hdr_t cpu_kcore_hdr;
 int	cpuspeed = 25;		/* relative CPU speed; XXX skewed on 68040 */
 int	delay_divisor = 82;	/* delay constant */
 
+#ifdef __HAVE_NEW_PMAP_68K
+/*
+ * Clamp the kernel virtual address space to keep it out of the
+ * TT ranges we use for devices.
+ */
+const struct pmap_bootmap machine_bootmap[] = {
+	{ .pmbm_vaddr = NEWS68K_IO_TT_BASE,
+	  .pmbm_size  = NEWS68K_IO_TT_SIZE,
+	  .pmbm_flags = PMBM_F_KEEPOUT },
+
+	{ .pmbm_vaddr = NEWS68K_PROM_TT_BASE,
+	  .pmbm_size  = NEWS68K_PROM_TT_SIZE,
+	  .pmbm_flags = PMBM_F_KEEPOUT },
+
+	{ .pmbm_vaddr = -1 },
+};
+#endif
+
 /*
  * Early initialization, before main() is called.
  */
 void
-news68k_init(void)
+machine_init(paddr_t nextpa)
 {
 	int i;
 
@@ -164,6 +181,8 @@ news68k_init(void)
 	 * Tell the VM system about available physical memory.  The
 	 * news68k only has one segment.
 	 */
+	avail_start = nextpa;
+	avail_end = m68k_ptob(maxmem) - m68k_round_page(MSGBUFSIZE);
 	uvm_page_physload(atop(avail_start), atop(avail_end),
 	    atop(avail_start), atop(avail_end), VM_FREELIST_DEFAULT);
 
@@ -203,11 +222,18 @@ cpu_startup(void)
 {
 	vaddr_t minaddr, maxaddr;
 	char pbuf[9];
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(__HAVE_NEW_PMAP_68K)
 	extern int pmapdebug;
 	int opmapdebug = pmapdebug;
 
 	pmapdebug = 0;
+#endif
+
+	/* Initialize the interrupt handlers. */
+	isrinit();
+
+#ifdef news1700
+	parityenable();
 #endif
 
 	if (fputype != FPU_NONE)
@@ -234,7 +260,7 @@ cpu_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(__HAVE_NEW_PMAP_68K)
 	pmapdebug = opmapdebug;
 #endif
 	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
@@ -316,9 +342,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -348,58 +374,13 @@ cpu_reboot(int howto, char *bootstr)
 static void
 cpu_init_kcore_hdr(void)
 {
-	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
-	struct m68k_kcore_hdr *m = &h->un._m68k;
-
-	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr));
-
-	/*
-	 * Initialize the `dispatcher' portion of the header.
-	 */
-	strcpy(h->name, machine);
-	h->page_size = PAGE_SIZE;
-	h->kernbase = KERNBASE;
-
-	/*
-	 * Fill in information about our MMU configuration.
-	 */
-	m->mmutype	= mmutype;
-	m->sg_v		= SG_V;
-	m->sg_frame	= SG_FRAME;
-	m->sg_ishift	= SG_ISHIFT;
-	m->sg_pmask	= SG_PMASK;
-	m->sg40_shift1	= SG4_SHIFT1;
-	m->sg40_mask2	= SG4_MASK2;
-	m->sg40_shift2	= SG4_SHIFT2;
-	m->sg40_mask3	= SG4_MASK3;
-	m->sg40_shift3	= SG4_SHIFT3;
-	m->sg40_addr1	= SG4_ADDR1;
-	m->sg40_addr2	= SG4_ADDR2;
-	m->pg_v		= PG_V;
-	m->pg_frame	= PG_FRAME;
-
-	/*
-	 * Initialize pointer to kernel segment table.
-	 */
-	m->sysseg_pa = (uint32_t)(pmap_kernel()->pm_stpa);
-
-	/*
-	 * Initialize relocation value such that:
-	 *
-	 *	pa = (va - KERNBASE) + reloc
-	 */
-	m->reloc = lowram;
-
-	/*
-	 * Define the end of the relocatable range.
-	 */
-	m->relocend = (uint32_t)&end;
+	phys_ram_seg_t *ram_segs = pmap_init_kcore_hdr(&cpu_kcore_hdr);
 
 	/*
 	 * news68k has one contiguous memory segment.
 	 */
-	m->ram_segs[0].start = lowram;
-	m->ram_segs[0].size  = ctob(physmem);
+	ram_segs[0].start = lowram;
+	ram_segs[0].size  = ctob(physmem);
 }
 
 /*
@@ -700,7 +681,6 @@ static volatile uint8_t *dip_switch, *int_status;
 
 const uint8_t *idrom_addr;
 volatile uint8_t *ctrl_ast, *ctrl_int2;
-volatile uint8_t *ctrl_led;
 uint32_t sccport0a, lance_mem_phys;
 
 #ifdef news1700
@@ -771,7 +751,6 @@ news1700_init(void)
 	idrom_addr	= (uint8_t *)(0xe1c00000);
 	ctrl_ast	= (uint8_t *)(0xe1280000);
 	ctrl_int2	= (uint8_t *)(0xe1180000);
-	ctrl_led	= (uint8_t *)(ctrl_led_phys);
 
 	sccport0a	= (0xe0d40002);
 	lance_mem_phys	= 0xe0e00000;
@@ -798,8 +777,6 @@ news1700_init(void)
 	ctrl_parity_clr	= (uint8_t *)(0xe1a00000);
 	parity_vector	= (uint8_t *)(0xe1c00200);
 
-	parityenable();
-
 	cpuspeed = 25;
 }
 
@@ -811,13 +788,15 @@ static void
 parityenable(void)
 {
 
+	if (systype != NEWS1700)
+		return;
+
 #define PARITY_VECT 0xc0
 #define PARITY_PRI 7
 
 	*parity_vector = PARITY_VECT;
 
-	isrlink_vectored((int (*)(void *))parityerror, NULL,
-	    PARITY_PRI, PARITY_VECT);
+	isrlink_vectored(parityerror, NULL, PARITY_PRI, PARITY_VECT);
 
 	*ctrl_parity_clr = 1;
 	*ctrl_parity = 1;
@@ -829,13 +808,13 @@ parityenable(void)
 
 static int innmihand;	/* simple mutex */
 
-static void
-parityerror(void)
+static int
+parityerror(void *arg)
 {
 
 	/* Prevent unwanted recursion. */
 	if (innmihand)
-		return;
+		return 1;
 	innmihand = 1;
 
 #if 0 /* XXX need to implement XXX */
@@ -845,6 +824,8 @@ parityerror(void)
 	*ctrl_parity_clr = 1;
 #endif
 	innmihand = 0;
+
+	return 1;
 }
 #endif /* news1700 */
 
@@ -863,7 +844,6 @@ news1200_init(void)
 	idrom_addr	= (uint8_t *)0xe1400000;
 	ctrl_ast	= (uint8_t *)0xe1100000;
 	ctrl_int2	= (uint8_t *)0xe10c0000;
-	ctrl_led	= (uint8_t *)ctrl_led_phys;
 
 	sccport0a	= 0xe1780002;
 	lance_mem_phys	= 0xe1a00000;
@@ -1005,7 +985,9 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 {
 
 	*handled = false;
-	return ISIIOVA(ptr) ? EFAULT : 0;
+	if ((uint8_t *)ptr >= intiobase)
+		return EFAULT;
+	return 0;
 }
 
 #ifdef MODULAR

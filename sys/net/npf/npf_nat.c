@@ -111,6 +111,7 @@ struct npf_natpolicy {
 
 	unsigned		n_algo;
 	union {
+		uint8_t    n_nat64_plen;
 		unsigned	n_rr_idx;
 		uint16_t	n_npt66_adj;
 	};
@@ -270,6 +271,9 @@ npf_natpolicy_export(const npf_natpolicy_t *np, nvlist_t *nat)
 	case NPF_ALGO_NPT66:
 		nvlist_add_number(nat, "npt66-adj", np->n_npt66_adj);
 		break;
+	case NPF_ALGO_NAT64:{
+		nvlist_add_number(nat, "nat64-plen", np->n_nat64_plen);
+	}
 	}
 	return 0;
 }
@@ -634,6 +638,9 @@ npf_snat_translate(npf_cache_t *npc, const npf_natpolicy_t *np, npf_flow_t flow)
 	case NPF_ALGO_NPT66:
 		return npf_npt66_rwr(npc, which, &np->n_taddr,
 		    np->n_tmask, np->n_npt66_adj);
+	case NPF_ALGO_NAT64:
+		return npf_nat64_rwrheader(npc, &npc->npc_nbuf,
+			which, &np->n_taddr, np->n_nat64_plen);
 	default:
 		taddr = &np->n_taddr;
 		break;

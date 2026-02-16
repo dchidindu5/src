@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.105 2025/09/23 06:28:20 thorpej Exp $	*/
+/*	$NetBSD: i2c.c,v 1.107 2026/01/15 16:56:22 skrll Exp $	*/
 
 /*
  * Copyright (c) 2021, 2022, 2025 The NetBSD Foundation, Inc.
@@ -79,7 +79,7 @@
 #endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.105 2025/09/23 06:28:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.107 2026/01/15 16:56:22 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

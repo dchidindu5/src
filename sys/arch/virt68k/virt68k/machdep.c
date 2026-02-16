@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.9 2024/03/05 14:15:36 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.23 2025/12/21 07:00:28 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,10 +39,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.9 2024/03/05 14:15:36 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.23 2025/12/21 07:00:28 skrll Exp $");
 
 #include "opt_ddb.h"
-#include "opt_m060sp.h"
 #include "opt_modular.h"
 #include "opt_m68k_arch.h"
 
@@ -87,7 +86,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.9 2024/03/05 14:15:36 thorpej Exp $");
 #include <machine/bus.h>
 #include <machine/pcb.h>
 #include <machine/psl.h>
-#include <machine/pte.h>
 #include <machine/vmparam.h>
 #include <m68k/include/cacheops.h>
 #include <dev/cons.h>
@@ -104,18 +102,16 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.9 2024/03/05 14:15:36 thorpej Exp $");
 /* the following is used externally (sysctl_hw) */
 char	machine[] = MACHINE;	/* from <machine/param.h> */
 
-/* Our exported CPU info; we can have only one. */  
+/* Our exported CPU info; we can have only one. */
 struct cpu_info cpu_info_store;
 
 struct vm_map *phys_map = NULL;
 
 paddr_t msgbufpa;		/* PA of message buffer */
 
-// int	maxmem;			/* max memory per process */
-
 extern	short exframesize[];
 
-/* prototypes for local functions */ 
+/* prototypes for local functions */
 void	identifycpu(void);
 void	initcpu(void);
 void	dumpsys(void);
@@ -133,7 +129,21 @@ void	straytrap(int, u_short);
 cpu_kcore_hdr_t cpu_kcore_hdr;
 
 /* Machine-dependent initialization routines. */
-void	virt68k_init(void);
+void	machine_init(paddr_t);
+
+#ifdef __HAVE_NEW_PMAP_68K
+/*
+ * Clamp the kernel virtual address space to keep it out of the
+ * TT ranges we use for devices.
+ */
+const struct pmap_bootmap machine_bootmap[] = {
+	{ .pmbm_vaddr = VIRT68K_IO_BASE,
+	  .pmbm_size  = VIRT68K_IO_SIZE,
+	  .pmbm_flags = PMBM_F_KEEPOUT },
+
+	{ .pmbm_vaddr = -1 },
+};
+#endif
 
 /*
  * Machine-dependent bootinfo "console attach" routine.
@@ -157,9 +167,15 @@ bootinfo_md_cnattach(void (*func)(bus_space_tag_t, bus_space_handle_t),
  * Early initialization, right before main is called.
  */
 void
-virt68k_init(void)
+machine_init(paddr_t nextpa)
 {
+	struct bootinfo_data *bid = bootinfo_data();
 	int i;
+
+	/*
+	 * Pass 2 at parsing bootinfo now that the MMU is enabled.
+	 */
+	bootinfo_startup2(nextpa);
 
 	/*
 	 * Just use the default pager_map_size for now.  We may decide
@@ -169,16 +185,16 @@ virt68k_init(void)
 	/*
 	 * Tell the VM system about available physical memory.
 	 */
-	for (i = 0; i < bootinfo_mem_nsegments_avail; i++) {
-		if (bootinfo_mem_segments_avail[i].mem_size < PAGE_SIZE) {
+	for (i = 0; i < bid->bootinfo_mem_nsegments_avail; i++) {
+		if (bid->bootinfo_mem_segments_avail[i].mem_size < PAGE_SIZE) {
 			/*
 			 * Segment has been completely gobbled up.
 			 */
 			continue;
 		}
 
-		paddr_t start = bootinfo_mem_segments_avail[i].mem_addr;
-		psize_t size  = bootinfo_mem_segments_avail[i].mem_size;
+		paddr_t start = bid->bootinfo_mem_segments_avail[i].mem_addr;
+		psize_t size  = bid->bootinfo_mem_segments_avail[i].mem_size;
 
 		printf("Memory segment %d: addr=0x%08lx size=0x%08lx\n", i,
 		    start, size);
@@ -193,8 +209,13 @@ virt68k_init(void)
 	}
 
 	/*
-	 * Initialize error message buffer (just before kernel text).
+	 * Initialize error message buffer.  The kernel is linked
+	 * at 8K so that we can leave VA==0 unmapped.  That leaves
+	 * 8K of physical memory sitting there in front of the kernel
+	 * that we can use for the message buffer.
 	 */
+	msgbufpa = 0;
+	KASSERT(MSGBUFSIZE <= 8192);
 	for (i = 0; i < btoc(round_page(MSGBUFSIZE)); i++) {
 		pmap_kenter_pa((vaddr_t)msgbufaddr + i * PAGE_SIZE,
 			       msgbufpa + i * PAGE_SIZE,
@@ -245,6 +266,7 @@ consinit(void)
 void
 cpu_startup(void)
 {
+	struct bootinfo_data *bid = bootinfo_data();
 	vaddr_t minaddr, maxaddr;
 	char pbuf[9];
 #ifdef DEBUG
@@ -286,10 +308,10 @@ cpu_startup(void)
 	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
-	if (bootinfo_mem_segments_ignored) {
+	if (bid->bootinfo_mem_segments_ignored) {
 		printf("WARNING: ignored %zd bytes of memory in %d segments.\n",
-		    bootinfo_mem_segments_ignored_bytes,
-		    bootinfo_mem_segments_ignored);
+		    bid->bootinfo_mem_segments_ignored_bytes,
+		    bid->bootinfo_mem_segments_ignored);
 	}
 
 	/*
@@ -413,6 +435,11 @@ identifycpu(void)
  */
 SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 {
+	/*
+	 * virt68k obviously does not have a non-working /RMC, but we
+	 * provide this as a r/w node in order to faciliate testing.
+	 */
+	static bool broken_rmc;
 
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
@@ -425,6 +452,12 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTLTYPE_STRUCT, "console_device", NULL,
 		       sysctl_consdev, 0, NULL, sizeof(dev_t),
 		       CTL_MACHDEP, CPU_CONSDEV, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "broken_rmc", NULL,
+		       NULL, 0, &broken_rmc, 0,
+		       CTL_MACHDEP, CPU_BROKEN_RMC, CTL_EOL);
 }
 
 /* See: sig_machdep.c */
@@ -480,9 +513,9 @@ cpu_reboot(int howto, char *bootstr)
 #if defined(PANICWAIT) && !defined(DDB)
 	if ((howto & RB_HALT) == 0 && panicstr) {
 		printf("hit any key to reboot...\n");
-		cnpollc(1);
+		cnpollc(true);
 		(void)cngetc();
-		cnpollc(0);
+		cnpollc(false);
 		printf("\n");
 	}
 #endif
@@ -518,61 +551,13 @@ cpu_reboot(int howto, char *bootstr)
 void
 cpu_init_kcore_hdr(void)
 {
-	cpu_kcore_hdr_t *h = &cpu_kcore_hdr;
-	struct m68k_kcore_hdr *m = &h->un._m68k;
-	int i;
-	extern char end[];
+	struct bootinfo_data *bid = bootinfo_data();
 
-	memset(&cpu_kcore_hdr, 0, sizeof(cpu_kcore_hdr)); 
+	phys_ram_seg_t *ram_segs = pmap_init_kcore_hdr(&cpu_kcore_hdr);
 
-	/*
-	 * Initialize the `dispatcher' portion of the header.
-	 */
-	strcpy(h->name, machine);
-	h->page_size = PAGE_SIZE;
-	h->kernbase = KERNBASE;
-
-	/*
-	 * Fill in information about our MMU configuration.
-	 */
-	m->mmutype	= mmutype;
-	m->sg_v		= SG_V;
-	m->sg_frame	= SG_FRAME;
-	m->sg_ishift	= SG_ISHIFT;
-	m->sg_pmask	= SG_PMASK;
-	m->sg40_shift1	= SG4_SHIFT1;
-	m->sg40_mask2	= SG4_MASK2;
-	m->sg40_shift2	= SG4_SHIFT2;
-	m->sg40_mask3	= SG4_MASK3;
-	m->sg40_shift3	= SG4_SHIFT3;
-	m->sg40_addr1	= SG4_ADDR1;
-	m->sg40_addr2	= SG4_ADDR2;
-	m->pg_v		= PG_V;
-	m->pg_frame	= PG_FRAME;
-
-	/*
-	 * Initialize pointer to kernel segment table.
-	 */
-	m->sysseg_pa = (uint32_t)(pmap_kernel()->pm_stpa);
-
-	/*
-	 * Initialize relocation value such that:
-	 *
-	 *	pa = (va - KERNBASE) + reloc
-	 *
-	 * Since we're linked and loaded at the same place,
-	 * and the kernel is mapped va == pa, this is 0.
-	 */
-	m->reloc = 0;
-
-	/*
-	 * Define the end of the relocatable range.
-	 */
-	m->relocend = (uint32_t)end;
-
-	for (i = 0; i < bootinfo_mem_nsegments; i++) {
-		m->ram_segs[i].start = bootinfo_mem_segments[i].mem_addr;
-		m->ram_segs[i].size  = bootinfo_mem_segments[i].mem_size;
+	for (int i = 0; i < bid->bootinfo_mem_nsegments; i++) {
+		ram_segs[i].start = bid->bootinfo_mem_segments[i].mem_addr;
+		ram_segs[i].size  = bid->bootinfo_mem_segments[i].mem_size;
 	}
 }
 
@@ -597,11 +582,12 @@ cpu_dumpsize(void)
 u_long
 cpu_dump_mempagecnt(void)
 {
+	struct bootinfo_data *bid = bootinfo_data();
 	u_long i, n;
 
 	n = 0;
-	for (i = 0; i < bootinfo_mem_nsegments; i++)
-		n += atop(bootinfo_mem_segments[i].mem_size);
+	for (i = 0; i < bid->bootinfo_mem_nsegments; i++)
+		n += atop(bid->bootinfo_mem_segments[i].mem_size);
 	return n;
 }
 
@@ -611,7 +597,7 @@ cpu_dump_mempagecnt(void)
 int
 cpu_dump(int (*dump)(dev_t, daddr_t, void *, size_t), daddr_t *blknop)
 {
-	int buf[MDHDRSIZE / sizeof(int)]; 
+	int buf[MDHDRSIZE / sizeof(int)];
 	cpu_kcore_hdr_t *chdr;
 	kcore_seg_t *kseg;
 	int error;
@@ -681,6 +667,7 @@ cpu_dumpconf(void)
 void
 dumpsys(void)
 {
+	struct bootinfo_data *bid = bootinfo_data();
 	const struct bdevsw *bdev;
 	u_long totalbytesleft, bytes, i, n, memcl;
 	u_long maddr;
@@ -728,9 +715,9 @@ dumpsys(void)
 
 	totalbytesleft = ptoa(cpu_dump_mempagecnt());
 
-	for (memcl = 0; memcl < bootinfo_mem_nsegments; memcl++) {
-		maddr = bootinfo_mem_segments[memcl].mem_addr;
-		bytes = bootinfo_mem_segments[memcl].mem_size;
+	for (memcl = 0; memcl < bid->bootinfo_mem_nsegments; memcl++) {
+		maddr = bid->bootinfo_mem_segments[memcl].mem_addr;
+		bytes = bid->bootinfo_mem_segments[memcl].mem_size;
 
 		for (i = 0; i < bytes; i += n, totalbytesleft -= n) {
 
@@ -827,7 +814,7 @@ nmihand(void *arg)
 /*
  * cpu_exec_aout_makecmds():
  *	CPU-dependent a.out format hook for execve().
- * 
+ *
  * Determine of the given exec package refers to something which we
  * understand and, if so, set up the vmcmds for it.
  */
@@ -862,15 +849,16 @@ const uint16_t ipl2psl_table[NIPL] = {
 int
 mm_md_physacc(paddr_t pa, vm_prot_t prot)
 {
+	struct bootinfo_data *bid = bootinfo_data();
 	psize_t size;
 	int i;
 
-	for (i = 0; i < bootinfo_mem_nsegments; i++) {
-		if (pa < bootinfo_mem_segments[i].mem_addr) {
+	for (i = 0; i < bid->bootinfo_mem_nsegments; i++) {
+		if (pa < bid->bootinfo_mem_segments[i].mem_addr) {
 			continue;
 		}
-		size = trunc_page(bootinfo_mem_segments[i].mem_size);
-		if (pa >= bootinfo_mem_segments[i].mem_addr + size) {
+		size = trunc_page(bid->bootinfo_mem_segments[i].mem_size);
+		if (pa >= bid->bootinfo_mem_segments[i].mem_addr + size) {
 			continue;
 		}
 		return 0;

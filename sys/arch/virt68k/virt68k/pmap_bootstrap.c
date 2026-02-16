@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_bootstrap.c,v 1.4 2024/01/02 07:46:49 thorpej Exp $	*/
+/*	$NetBSD: pmap_bootstrap.c,v 1.14 2025/11/30 20:09:18 thorpej Exp $	*/
 
 /* 
  * Copyright (c) 1991, 1993
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap_bootstrap.c,v 1.4 2024/01/02 07:46:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_bootstrap.c,v 1.14 2025/11/30 20:09:18 thorpej Exp $");
 
 #include "opt_m68k_arch.h"
 
@@ -44,18 +44,14 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_bootstrap.c,v 1.4 2024/01/02 07:46:49 thorpej E
 #include <sys/kcore.h>
 #include <uvm/uvm_extern.h>
 
-#include <machine/bootinfo.h>
 #include <machine/cpu.h>
 #include <machine/pte.h>
 #include <machine/vmparam.h>
 
-#define RELOC(v, t)	*((t*)((uintptr_t)&(v) + firstpa))
-
 extern char *kernel_text;
 extern char *etext;
 
-extern paddr_t avail_start, avail_end;
-extern paddr_t msgbufpa;
+extern vaddr_t kernel_reloc_offset;
 
 /*
  * Special purpose kernel virtual addresses, used for mapping
@@ -69,30 +65,23 @@ void *CADDR1, *CADDR2;
 char *vmmap;
 void *msgbufaddr;
 
-void pmap_bootstrap(paddr_t, paddr_t);
+paddr_t pmap_bootstrap1(paddr_t, paddr_t);
 
 /*
  * Bootstrap the VM system.
  *
- * Called with MMU off so we must relocate all global references by `firstpa'
+ * Called with MMU off so we must relocate all global references by `reloff'
  * (don't call any functions here!)  `nextpa' is the first available physical
  * memory address.  Returns an updated first PA reflecting the memory we
  * have allocated.  MMU is still off when we return.
  *
- * XXX On virt68k, the kernel is mapped VA==PA, so we can actually have to
- * XXX worry about any of this RELOC() nonsense.
- *
- * XXX On virt68k, firstpa == 0, and firstpa != start of kernel text.
- * XXX Same goes for KERNBASE.  We intentionally leave the area between
- * XXX KERNBASE and the start of kernel text unmapped.
- *
- * XXX On virt68k, we use TT registers to map I/O space.
+ * On virt68k, we use TT registers to map I/O space.
  *
  * XXX assumes sizeof(u_int) == sizeof(pt_entry_t)
  * XXX a PIC compiler would make this much easier.
  */
-void
-pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
+paddr_t
+pmap_bootstrap1(paddr_t nextpa, paddr_t reloff)
 {
 	paddr_t lwp0upa, kstpa, kptmpa, kptpa;
 	u_int nptpages, kstsize;
@@ -102,6 +91,8 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 #if defined(M68040) || defined(M68060)
 	u_int stfree = 0;	/* XXX: gcc -Wuninitialized */
 #endif
+
+	nextpa = m68k_round_page(nextpa);
 
 	/*
 	 * Calculate important physical addresses:
@@ -117,8 +108,16 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	 *			kernel PT pages		Sysptsize+ pages
 	 *
 	 * The KVA corresponding to any of these PAs is:
-	 *	(PA - firstpa + KERNBASE).
+	 *
+	 *	VM_MIN_KERNEL_ADDRESS + (PA - reloff)
 	 */
+
+#define	PA_TO_VA(pa)	(VM_MIN_KERNEL_ADDRESS + ((pa) - reloff))
+#define	VA_TO_PA(va)	((((vaddr_t)(va)) - VM_MIN_KERNEL_ADDRESS) + reloff)
+#define	RELOC(v, t)	*((t *)VA_TO_PA(&(v)))
+
+	RELOC(kernel_reloc_offset, vaddr_t) = reloff;
+
 	lwp0upa = nextpa;
 	nextpa += USPACE;
 
@@ -135,7 +134,8 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	nextpa += PAGE_SIZE;
 
 	kptpa = nextpa;
-	nptpages = RELOC(Sysptsize, int) + howmany(RELOC(physmem, int), NPTEPG);
+	nptpages = RELOC(Sysptsize, int) +
+	    howmany(RELOC(physmem, psize_t), NPTEPG);
 	nextpa += nptpages * PAGE_SIZE;
 
 	/*
@@ -330,7 +330,8 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	pte = (pt_entry_t *)kptpa;
 	epte = &pte[m68k_btop(m68k_trunc_page(&etext))];
 	pte = &pte[m68k_btop(m68k_trunc_page(&kernel_text))];
-	protopte = m68k_trunc_page(&kernel_text) | PG_RO | PG_U | PG_V;
+	protopte =
+	    VA_TO_PA(m68k_trunc_page(&kernel_text)) | PG_RO | PG_U | PG_V;
 	while (pte < epte) {
 		*pte++ = protopte;
 		protopte += PAGE_SIZE;
@@ -341,7 +342,7 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	 * u-area and page table allocated below (RW).
 	 */
 	epte = (pt_entry_t *)kptpa;
-	epte = &epte[m68k_btop(kstpa - firstpa)];
+	epte = &epte[m68k_btop(PA_TO_VA(kstpa))];
 	protopte = (protopte & ~PG_PROT) | PG_RW;
 	/*
 	 * Enable copy-back caching of data pages
@@ -358,7 +359,7 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	 *  for the 68060 mandatory)
 	 */
 	epte = (pt_entry_t *)kptpa;
-	epte = &epte[m68k_btop(nextpa - firstpa)];
+	epte = &epte[m68k_btop(PA_TO_VA(nextpa))];
 	protopte = (protopte & ~PG_PROT) | PG_RW;
 	if (RELOC(mmutype, int) == MMU_68040) {
 		protopte &= ~PG_CMASK;
@@ -379,7 +380,7 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	/*
 	 * Sysseg: base of kernel segment table
 	 */
-	RELOC(Sysseg, st_entry_t *) = (st_entry_t *)(kstpa - firstpa);
+	RELOC(Sysseg, st_entry_t *) = (st_entry_t *)PA_TO_VA(kstpa);
 	RELOC(Sysseg_pa, paddr_t) = kstpa;
 #if defined(M68040) || defined(M68060)
 	if (RELOC(mmutype, int) == MMU_68040)
@@ -388,7 +389,7 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 	/*
 	 * Sysptmap: base of kernel page table map
 	 */
-	RELOC(Sysptmap, pt_entry_t *) = (pt_entry_t *)(kptmpa - firstpa);
+	RELOC(Sysptmap, pt_entry_t *) = (pt_entry_t *)PA_TO_VA(kptmpa);
 	/*
 	 * Sysmap: kernel page table (as mapped through Sysptmap)
 	 * Allocated at the end of KVA space.
@@ -397,39 +398,9 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 
 	/*
 	 * Remember the u-area address so it can be loaded in the lwp0
-	 * via uvm_lwp_setuarea() later in pmap_bootstrap_finalize().
+	 * via uvm_lwp_setuarea() later in pmap_bootstrap2().
 	 */
-	RELOC(lwp0uarea, vaddr_t) = lwp0upa - firstpa;
-
-	/*
-	 * Scoot the start of available forward to account for:
-	 *
-	 *	(1) The kernel text, data, and bss.
-	 *
-	 *	(2) The pages we stole above for pmap data
-	 *	    structures.
-	 */
-	RELOC(bootinfo_mem_segments_avail[0].mem_size, uint32_t) -=
-	    nextpa - RELOC(bootinfo_mem_segments_avail[0].mem_addr, uint32_t);
-	RELOC(bootinfo_mem_segments_avail[0].mem_addr, uint32_t) = nextpa;
-
-	/*
-	 * The kernel is linked at 8K so that we can leave VA==0
-	 * unmapped.  Use that space for the kernel message buffer.
-	 */
-	RELOC(msgbufpa, paddr_t) = firstpa;
-
-	/*
-	 * Initialize avail_start and avail_end.
-	 */
-	i = RELOC(bootinfo_mem_nsegments, int) - 1;
-	RELOC(avail_start, paddr_t) =
-	    RELOC(bootinfo_mem_segments_avail[0].mem_addr, uint32_t);
-	RELOC(avail_end, paddr_t) =
-	    RELOC(bootinfo_mem_segments_avail[i].mem_addr, uint32_t) +
-	    RELOC(bootinfo_mem_segments_avail[i].mem_size, uint32_t);
-
-	RELOC(mem_size, vsize_t) = m68k_ptob(RELOC(physmem, int));
+	RELOC(lwp0uarea, vaddr_t) = PA_TO_VA(lwp0upa);
 
 	RELOC(virtual_end, vaddr_t) = VM_MAX_KERNEL_ADDRESS;
 
@@ -449,4 +420,6 @@ pmap_bootstrap(paddr_t nextpa, paddr_t firstpa)
 		va += m68k_round_page(MSGBUFSIZE);
 		RELOC(virtual_avail, vaddr_t) = va;
 	}
+
+	return nextpa;
 }

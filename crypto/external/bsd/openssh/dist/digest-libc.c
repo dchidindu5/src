@@ -16,7 +16,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include "includes.h"
-__RCSID("$NetBSD: digest-libc.c,v 1.9 2025/10/11 15:45:06 christos Exp $");
+__RCSID("$NetBSD: digest-libc.c,v 1.11 2025/12/28 09:54:06 nia Exp $");
 
 #include <sys/types.h>
 #include <limits.h>
@@ -78,7 +78,7 @@ const struct ssh_digest digests[SSH_DIGEST_MAX] = {
 		"SHA256",
 		SHA256_BLOCK_LENGTH,
 		SHA256_DIGEST_LENGTH,
-		sizeof(SHA2_CTX),
+		sizeof(SHA256_CTX),
 		(md_init_fn *) SHA256Init,
 		(md_update_fn *) SHA256Update,
 		(md_final_fn *) SHA256Final
@@ -88,7 +88,7 @@ const struct ssh_digest digests[SSH_DIGEST_MAX] = {
 		"SHA384",
 		SHA384_BLOCK_LENGTH,
 		SHA384_DIGEST_LENGTH,
-		sizeof(SHA2_CTX),
+		sizeof(SHA384_CTX),
 		(md_init_fn *) SHA384Init,
 		(md_update_fn *) SHA384Update,
 		(md_final_fn *) SHA384Final
@@ -98,7 +98,7 @@ const struct ssh_digest digests[SSH_DIGEST_MAX] = {
 		"SHA512",
 		SHA512_BLOCK_LENGTH,
 		SHA512_DIGEST_LENGTH,
-		sizeof(SHA2_CTX),
+		sizeof(SHA512_CTX),
 		(md_init_fn *) SHA512Init,
 		(md_update_fn *) SHA512Update,
 		(md_final_fn *) SHA512Final

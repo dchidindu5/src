@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.131 2024/01/18 05:12:30 thorpej Exp $	*/
+/*	$NetBSD: locore.s,v 1.149 2025/12/11 11:00:56 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -166,9 +166,21 @@ ASENTRY_NOPROFILE(start)
 
 	ASRELOC(Lbrdid2mach,%a0)
 Lbrdmatch:
+	/*
+	 * Board type entries look like:
+	 *
+	 *	.word	board-id	|  2
+	 *	.word	cpu-type	| +2
+	 *	.word	mmu-type	| +2
+	 *	.word	fpu-type	| +2
+	 *	.long	init-func	| +4 --> 12 bytes
+	 *
+	 * We advance past the board ID when we compare it, meaning that
+	 * we have 10 bytes to skip if we don't get a match.
+	 */
 	cmpw	%a0@+,%d0
 	jbeq	Lgotmatch
-	addw	#0x12,%a0		| Each entry is 20-2 bytes long
+	addw	#10,%a0	
 	tstw	%a0@
 	jbne	Lbrdmatch
 
@@ -282,18 +294,18 @@ Linit147:
 	 */
 	RELOC(intiobase_phys, %a0);
 	movl	#INTIOBASE147,%a0@
-	RELOC(intiotop_phys, %a0);
-	movl	#INTIOTOP147,%a0@
+	RELOC(intiosize, %a0);
+	movl	#INTIOSIZE147,%a0@
 
 	/* initialise list of physical memory segments for pmap_bootstrap */
 	RELOC(phys_seg_list, %a0)
-	movl	%a5,%a0@		| phys_seg_list[0].ps_start
+	movl	%a5,%a0@(PS_START)	| phys_seg_list[0].ps_start
 	movl	0xfffe0774,%d1		| End + 1 of onboard memory
-	movl	%d1,%a0@(4)		| phys_seg_list[0].ps_end
-	clrl	%a0@(8)			| phys_seg_list[0].ps_startpage
+	movl	%d1,%a0@(PS_END)	| phys_seg_list[0].ps_end
 
 	/* offboard RAM */
-	clrl	%a0@(0x0c)		| phys_seg_list[1].ps_start
+	lea	%a0@(SIZEOF_PHYSSEGLIST),%a0
+	clrl	%a0@(PS_START)		| phys_seg_list[1].ps_start
 	movl	#PAGE_SIZE-1,%d0
 	addl	0xfffe0764,%d0		| Start of offboard segment
 	andl	#-PAGE_SIZE,%d0		| Round up to page boundary
@@ -303,12 +315,12 @@ Linit147:
 	andl	#-PAGE_SIZE,%d1		| Round up to page boundary
 	cmpl	%d1,%d0			| Quick and dirty validity check
 	jbcs	Loff_ok			| Yup, looks good.
-	movel	%a0@(4),%d1		| Just use onboard RAM otherwise
+	RELOC(phys_seg_list, %a0)
+	movel	%a0@(PS_END),%d1	| Just use onboard RAM otherwise
 	jbra	Lsavmaxmem
 Loff_ok:
-	movl	%d0,%a0@(0x0c)		| phys_seg_list[1].ps_start
-	movl	%d1,%a0@(0x10)		| phys_seg_list[1].ps_end
-	clrl	%a0@(0x14)		| phys_seg_list[1].ps_startpage
+	movl	%d0,%a0@(PS_START)	| phys_seg_list[1].ps_start
+	movl	%d1,%a0@(PS_END)	| phys_seg_list[1].ps_end
 
 	/*
 	 * Offboard RAM needs to be cleared to zero to initialise parity
@@ -320,13 +332,7 @@ Lclearoff:
 	clrl	%a0@+			| zap a word
 	cmpl	%a0,%d1			| reached end?
 	jbne	Lclearoff
-
-Lsavmaxmem:
-	moveq	#PGSHIFT,%d2
-	lsrl	%d2,%d1			| convert to page (click) number
-	RELOC(maxmem, %a0)
-	movl	%d1,%a0@		| save as maxmem
-	jra	Lstart1
+	jra	Lsavmaxmem		| save maxmem and continue with boot
 #endif
 
 #if defined(MVME162) || defined(MVME172)
@@ -475,35 +481,35 @@ Lis1xx_common:
 	 */
 	RELOC(intiobase_phys, %a0);
 	movl	#INTIOBASE1xx,%a0@
-	RELOC(intiotop_phys, %a0);
-	movl	#INTIOTOP1xx,%a0@
+	RELOC(intiosize, %a0);
+	movl	#INTIOSIZE1xx,%a0@
 
 	/*
 	 * Initialise first physical memory segment with onboard RAM details
 	 */
 	RELOC(phys_seg_list, %a0)
-	movl	%a5,%a0@		| phys_seg_list[0].ps_start
-	movl	%d1,%a0@(4)		| phys_seg_list[0].ps_end
-	clrl	%a0@(8)			| phys_seg_list[0].ps_startpage
+	movl	%a5,%a0@(PS_START)	| phys_seg_list[0].ps_start
+	movl	%d1,%a0@(PS_END)	| phys_seg_list[0].ps_end
 
 	/* offboard RAM */
-	clrl	%a0@(0x0c)		| phys_seg_list[1].ps_start
+	lea	%a0@(SIZEOF_PHYSSEGLIST),%a0
+	clrl	%a0@(PS_START)		| phys_seg_list[1].ps_start
 	movl	#PAGE_SIZE-1,%d0
 	addl	0xfffc0000,%d0		| Start of offboard segment
 	andl	#-PAGE_SIZE,%d0		| Round up to page boundary
-	jbeq	Ldone1xx		| Jump if none defined
+	jbeq	Lsavmaxmem		| Jump if none defined
 	movl	#PAGE_SIZE,%d1		| Note: implicit '+1'
 	addl	0xfffc0004,%d1		| End of offboard segment
 	andl	#-PAGE_SIZE,%d1		| Round up to page boundary
 	cmpl	%d1,%d0			| Quick and dirty validity check
 	jbcs	Lramsave1xx		| Yup, looks good.
-	movel	%a0@(4),%d1		| Just use onboard RAM otherwise
-	jbra	Ldone1xx
+	RELOC(phys_seg_list, %a0)
+	movel	%a0@(PS_END),%d1	| Just use onboard RAM otherwise
+	jbra	Lsavmaxmem
 
 Lramsave1xx:
-	movl	%d0,%a0@(0x0c)		| phys_seg_list[1].ps_start
-	movl	%d1,%a0@(0x10)		| phys_seg_list[1].ps_end
-	clrl	%a0@(0x14)		| phys_seg_list[1].ps_startpage
+	movl	%d0,%a0@(PS_START)	| phys_seg_list[1].ps_start
+	movl	%d1,%a0@(PS_END)	| phys_seg_list[1].ps_end
 
 	/*
 	 * Offboard RAM needs to be cleared to zero to initialise parity
@@ -515,110 +521,66 @@ Lramclr1xx:
 	clrl	%a0@+			| zap a word
 	cmpl	%a0,%d1			| reached end?
 	jbne	Lramclr1xx
-
-Ldone1xx:
-	moveq	#PGSHIFT,%d2
-	lsrl	%d2,%d1			| convert to page (click) number
-	RELOC(maxmem, %a0)
-	movl	%d1,%a0@		| save as maxmem
-
-	/* FALLTHROUGH to Lstart1 */
 #endif
 
+Lsavmaxmem:
+	moveq	#PGSHIFT,%d2
+	lsrl	%d2,%d1			| convert to page (click) number
+	RELOC(physmem, %a0)
+	movl	%d1,%a0@		| save into physmem
 
-Lstart1:
-/* initialize source/destination control registers for movs */
-	moveq	#FC_USERD,%d0		| user space
-	movc	%d0,%sfc		|   as source
-	movc	%d0,%dfc		|   and destination of transfers
 /*
  * configure kernel and lwp0 VA space so we can get going
  */
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	RELOC(esym,%a0)			| end of static kernel text/data syms
-	movl	%a0@,%d2
+	movl	%a0@,%a4
+	tstl	%a4
 	jne	Lstart2
 #endif
-	movl	#_C_LABEL(end),%d2	| end of static kernel text/data
+	movl	#_C_LABEL(end),%a4	| end of static kernel text/data
 Lstart2:
-	addl	#PAGE_SIZE-1,%d2
-	andl	#PG_FRAME,%d2		| round to a page
-	movl	%d2,%a4
 	addl	%a5,%a4			| convert to PA
-	pea	%a5@			| firstpa
+	pea	%a5@			| reloff
 	pea	%a4@			| nextpa
-	RELOC(pmap_bootstrap,%a0)
-	jbsr	%a0@			| pmap_bootstrap(firstpa, nextpa)
+	RELOC(pmap_bootstrap1,%a0)
+	jbsr	%a0@			| pmap1_bootstrap1(nextpa, reloff)
 	addql	#8,%sp
+
+	/*
+	 * Updated nextpa returned in %d0.  We need to squirrel
+	 * that away in a callee-saved register to use later,
+	 * after the MMU is enabled.
+	 */
+	movl	%d0, %d7
+
+	/* NOTE: %d7 is now off-limits!! */
 
 /*
  * Enable the MMU.
- * Since the kernel is mapped logical == physical, we just turn it on.
+ * Since the kernel is mapped logical == physical, there is no prep
+ * work to do.
  */
-	RELOC(Sysseg_pa, %a0)		| system segment table addr
-	movl	%a0@,%d1		| read value (a PA)
-	RELOC(mmutype, %a0)
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu1		| no, skip
-	.long	0x4e7b1807		| movc d1,srp
-	jra	Lstploaddone
-Lmotommu1:
-#ifdef M68030
-	RELOC(protorp, %a0)
-	movl	%d1,%a0@(4)		| segtable address
-	pmove	%a0@,%srp		| load the supervisor root pointer
-#endif /* M68030 */
-Lstploaddone:
-	RELOC(mmutype, %a0)
-	cmpl	#MMU_68040,%a0@		| 68040?
-	jne	Lmotommu2		| no, skip
-	moveq	#0,%d0			| ensure TT regs are disabled
-	.long	0x4e7b0004		| movc d0,itt0
-	.long	0x4e7b0005		| movc d0,itt1
-	.long	0x4e7b0006		| movc d0,dtt0
-	.long	0x4e7b0007		| movc d0,dtt1
-	.word	0xf4d8			| cinva bc
-	.word	0xf518			| pflusha
-	movl	#0x8000,%d0
-	.long	0x4e7b0003		| movc d0,tc
-#ifdef M68060
-	RELOC(cputype, %a0)
-	cmpl	#CPU_68060,%a0@		| 68060?
-	jne	Lnot060cache
-	movl	#1,%d0
-	.long	0x4e7b0808		| movcl d0,pcr
-	movl	#0xa0808000,%d0
-	movc	%d0,%cacr		| enable store buffer, both caches
-	jmp	Lenab1
-Lnot060cache:
-#endif
-	movl	#0x80008000,%d0
-	movc	%d0,%cacr		| turn on both caches
-	jmp	Lenab1
-Lmotommu2:
-	pflusha
-	movl	#MMU51_TCR_BITS,%sp@-	| value to load TC with
-	pmove	%sp@,%tc		| load it
+#include <m68k/m68k/mmu_enable.s>
 
 /*
  * Should be running mapped from this point on
  */
-Lenab1:
+Lmmuenabled:
 /* Point the CPU VBR at our vector table */
 	lea	_ASM_LABEL(tmpstk),%sp	| re-load temporary stack
 	jbsr	_C_LABEL(vec_init)	| initialize vector table
-/* call final pmap setup */
-	jbsr	_C_LABEL(pmap_bootstrap_finalize)
+/* phase 2 of pmap setup, returns pointer to lwp0 uarea in %a0 */
+	jbsr	_C_LABEL(pmap_bootstrap2)
 /* set kernel stack, user SP */
-	movl	_C_LABEL(lwp0uarea),%a1	| get lwp0 uarea
-	lea	%a1@(USPACE-4),%sp	| set kernel stack to end of area
+	lea	%a0@(USPACE-4),%sp	| set kernel stack to end of area
 	movl	#USRSTACK-4,%a2
 	movl	%a2,%usp		| init user SP
 	tstl	_C_LABEL(fputype)	| Have an FPU?
 	jeq	Lenab2			| No, skip.
-	clrl	%a1@(PCB_FPCTX)		| ensure null FP context
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill a1)
+	clrl	%a0@(PCB_FPCTX)		| ensure null FP context
+	pea	%a0@(PCB_FPCTX)
+	jbsr	_C_LABEL(m68881_restore) | restore it (does not kill %a0)
 	addql	#4,%sp
 Lenab2:
 	cmpl	#MMU_68040,_C_LABEL(mmutype)	| 68040?
@@ -636,7 +598,10 @@ Lenab3:
  * main() nevers returns; we exit to user mode from a forked process
  * later on.
  */
-	jbsr	_C_LABEL(mvme68k_init)	| additional pre-main initialization
+	movl	%d7,%sp@-		| push nextpa saved above
+	jbsr	_C_LABEL(machine_init)	| additional pre-main initialization
+	addql	#4,%sp
+
 	movw	#PSL_LOWIPL,%sr		| lower SPL
 	clrw	%sp@-			| vector offset/frame type
 	clrl	%sp@-			| PC - filled in by "execve"
@@ -1124,14 +1089,18 @@ GLOBAL(bootctrllun)
 GLOBAL(bootaddr)
 	.long	0
 
+/*
+ * machine_bootmap[] interleaved with intio*-related variables.
+ * intiobase_phys and intiosize are initialized at run-time.
+ */
 GLOBAL(intiobase)
 	.long	0		| KVA of base of internal IO space
-
-GLOBAL(intiolimit)
-	.long	0		| KVA of end of internal IO space
-
+GLOBAL(machine_bootmap)
+	.long	_C_LABEL(intiobase) | [0].pmbm_vaddr_ptr = &intiobase
 GLOBAL(intiobase_phys)
-	.long	0		| PA of board's I/O registers
+	.long	0		| [0].pmbm_paddr = PA of internal I/O space
+GLOBAL(intiosize)
+	.long	0		| [0].pmbm_size = size of internal I/O space
+	.long	PMBM_F_CI	| [0].pmbm_flags = cache-inhibited mapping
+	.long	-1		| [1].pmbm_vaddr = end of list
 
-GLOBAL(intiotop_phys)
-	.long	0		| PA of top of board's I/O registers

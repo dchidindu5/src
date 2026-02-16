@@ -45,6 +45,7 @@ npf_nat_iterate
 npf_nat_lookup
 npf_nat_setaddr
 npf_nat_setalgo
+npf_nat_setnat64plen
 npf_nat_setnpt66
 npf_nat_setport
 npf_nat_settable

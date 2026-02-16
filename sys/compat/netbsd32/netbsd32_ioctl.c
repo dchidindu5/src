@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_ioctl.c,v 1.122 2024/11/10 16:20:12 riastradh Exp $	*/
+/*	$NetBSD: netbsd32_ioctl.c,v 1.124 2026/01/08 01:11:24 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_ioctl.c,v 1.122 2024/11/10 16:20:12 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_ioctl.c,v 1.124 2026/01/08 01:11:24 mrg Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ntp.h"
